@@ -6,5 +6,5 @@ Data wrangling on JSON data files.
 Project folder: data_wrangling_json
 
 ## 5.3 Data Wrangling SQL
-Data wrangling on JSON data files.
+Data wrangling on mySQL DB. 
 Project folder: data_wrangling_sql
