@@ -12,3 +12,7 @@ Project folder: data_wrangling_sql
 ## 5.4 Data Wrangling API
 Data wrangling using Quandl API
 Project folder: data_wrangling_api
+
+## 8.3 Exploratory Data Analysis
+Exploratory data analysis on Human Temperatures Dataset
+Project folder: EDA_human_temperature
