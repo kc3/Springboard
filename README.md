@@ -33,6 +33,6 @@ URL: https://nbviewer.jupyter.org/github/kc3/Springboard/blob/master/EDA_racial_
 ## 8.3 Exploratory Data Analysis #3
 Exploratory data analysis on Hospital Readmissions dataset.
 
-Project folder: EDA_hospital_readmissions
+Project folder: EDA_hospital_readmit
 
-URL: https://nbviewer.jupyter.org/github/kc3/Springboard/blob/master/EDA_hospital_readmissions/sliderule_dsi_inferential_statistics_exercise_3.ipynb
+URL: https://nbviewer.jupyter.org/github/kc3/Springboard/blob/master/EDA_hospital_readmit/sliderule_dsi_inferential_statistics_exercise_3.ipynb
