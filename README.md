@@ -43,3 +43,10 @@ Linear Regression on Boston Housing Dataset.
 Project folder: reg_boston_housing
 
 URL: https://nbviewer.jupyter.org/github/kc3/Springboard/blob/master/reg_boston_housing/Mini_Project_Linear_Regression.ipynb
+
+## 10.1 Logistic Regression
+Classification Problem using Logistic Regression on Heights and Weights data by gender.
+
+Project folder: reg_heights_weights
+
+URL: https://nbviewer.jupyter.org/github/kc3/Springboard/blob/master/reg_heights_weights/Mini_Project_Logistic_Regression.ipynb
