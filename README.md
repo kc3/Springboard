@@ -36,3 +36,10 @@ Exploratory data analysis on Hospital Readmissions dataset.
 Project folder: EDA_hospital_readmit
 
 URL: https://nbviewer.jupyter.org/github/kc3/Springboard/blob/master/EDA_hospital_readmit/sliderule_dsi_inferential_statistics_exercise_3.ipynb
+
+## 10.1 Linear Regression
+Linear Regression on Boston Housing Dataset.
+
+Project folder: reg_boston_housing
+
+URL: https://nbviewer.jupyter.org/github/kc3/Springboard/blob/master/reg_boston_housing/Mini_Project_Linear_Regression.ipynb
