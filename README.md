@@ -50,3 +50,10 @@ Classification Problem using Logistic Regression on Heights and Weights data by 
 Project folder: reg_heights_weights
 
 URL: https://nbviewer.jupyter.org/github/kc3/Springboard/blob/master/reg_heights_weights/Mini_Project_Logistic_Regression.ipynb
+
+## 10.3 Naive Bayes
+Classification Problem using Naive Bayes using Rotten Tomatoes Movie Dataset.
+
+Project folder: naive_bayes
+
+URL: https://nbviewer.jupyter.org/github/kc3/Springboard/blob/master/naive_bayes/Mini_Project_Naive_Bayes.ipynb
