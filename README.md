@@ -57,3 +57,10 @@ Classification Problem using Naive Bayes using Rotten Tomatoes Movie Dataset.
 Project folder: naive_bayes
 
 URL: https://nbviewer.jupyter.org/github/kc3/Springboard/blob/master/naive_bayes/Mini_Project_Naive_Bayes.ipynb
+
+## 10.5 Unsupervised Learning
+Classification Problem using Advertising Campaigns for Wines dataset.
+
+Project folder: clustering
+
+URL: https://nbviewer.jupyter.org/github/kc3/Springboard/blob/master/clustering/Mini_Project_Clustering.ipynb
