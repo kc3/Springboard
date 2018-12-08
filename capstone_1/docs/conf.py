@@ -185,7 +185,7 @@ latex_elements = {
 latex_documents = [
     ('index',
      'capstone_1.tex',
-     u'capstone_1 Documentation',
+     u'Capstone Documentation',
      u"Kapil Chiravarambath", 'manual'),
 ]
 
