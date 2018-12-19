@@ -37,4 +37,4 @@ class TestTree(object):
                         tree_string = line.strip()
                         t = tree.Tree(tree_string)
                         s = str(t)
-                        assert s == tree_string, ""
+                        assert s == tree_string, "Unable to parse Tree String: {0}".format(tree_string)

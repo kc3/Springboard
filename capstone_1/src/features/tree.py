@@ -94,7 +94,8 @@ class Tree:
                 # This is an intermediate node else it is leaf.
                 open_idx = tree_string.find('(', idx)
                 close_idx = tree_string.find(')', idx)
-                assert close_idx != -1, "Expected closing parenthesis after open parenthesis."
+                assert close_idx != -1, "Expected closing parenthesis after open parenthesis. {0}"\
+                    .format(tree_string[idx:])
 
                 if open_idx == -1 or close_idx < open_idx:
                     # Found a leaf
@@ -110,7 +111,8 @@ class Tree:
 
             else:
                 if tree_string[idx] == ')':
-                    assert stack, "Closing parenthesis found before any tokens."
+                    assert stack, "Closing parenthesis found before any tokens. {0}"\
+                        .format(tree_string[idx:])
 
                     # Get node
                     node = stack.pop()
