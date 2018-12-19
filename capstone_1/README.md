@@ -1,7 +1,7 @@
-capstone_1
+Capstone 1
 ==============================
 
-Sentiment Analysis for Rotten Tomatoes movie reviews.
+Deep Learning techniques for Sentiment Analysis of Rotten Tomatoes movie reviews. (Stanford Sentiment Treebank)
 
 Project Organization
 ------------
