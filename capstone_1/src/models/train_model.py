@@ -4,11 +4,14 @@
 # Functionality to train all models in this project.
 #
 
+import random
+from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.model_selection import PredefinedSplit, GridSearchCV
 from sklearn.metrics import make_scorer
 from sklearn.metrics import accuracy_score
+from src.features.tree import Tree
 from src.models.RNTN import RNTN
-import random
+
 
 #
 # Singleton to avoid multiple copies.
@@ -43,6 +46,10 @@ class DataManager:
         self.x_dev = self._load(self._make_file_name(path, 'dev'), 100)
         self.x_test = self._load(self._make_file_name(path, 'test'), 100)
 
+        # Build Corpus
+        self.countvectorizer = CountVectorizer()
+        self._build_corpus()
+
     @staticmethod
     def _make_file_name(file_path, file_name):
         return '{0}{1}.txt'.format(file_path, file_name)
@@ -65,12 +72,24 @@ class DataManager:
 
             return s
 
+    def _build_corpus(self):
+        """Builds corpus from tree strings"""
+        x = self.x_train + self.x_dev
+        corpus = []
+        for i in range(len(x)):
+            tree_string = x[i]
+            t = Tree(tree_string)
+            corpus.append(t.text())
+
+        # Use CountVectorizer to build dictionary of words.
+        self.countvectorizer.fit(corpus)
 
 #
 # Function to train model with predefined split.
 # Expects both the training and cross validation dataset.
 # Hyper-parameter training done with both.
 #
+
 
 def train_model(clf, params, score_func, x_train, y_train, x_dev, y_dev):
     """Train a given model with the training/cross validation data provided."""
@@ -87,31 +106,13 @@ def train_model(clf, params, score_func, x_train, y_train, x_dev, y_dev):
     return model
 
 #
-# Function to evaluate a given model
-#
-
-
-def evaluate_model(cv_model, x_test, y_test):
-    """Evaluate the model for test set."""
-    return cv_model.score(x_test, y_test)
-
-#
-# Function to predict labels
-#
-
-
-def predict_model(cv_model, x_test):
-    """Predicts labels for given test set."""
-    return cv_model.predict(x_test)
-
-#
 # Function to train all models
 #
 
 
 def train_all_models():
     """Function that trains all models and saves the trained models."""
-    data_manager = DataManager(max_rows=100)
+    data_manager = DataManager()
 
     clf = RNTN()
     params = {}
