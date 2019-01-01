@@ -25,6 +25,12 @@ class TestTree(object):
         s = str(t)
         assert s == tree_string
 
+    def test_tree_text(self):
+        tree_string = '(3 (2 But) (3 (2 he) (3 (2 somehow) (3 (3 (2 (2 pulls) (2 it)) (1 off)) (2 .)))))'
+        t = tree.Tree(tree_string)
+        s = t.text()
+        assert s == 'But he somehow pulls it off .'
+
     def test_random_tree(self):
         max_rows = {'train': 8544, 'dev': 1101, 'test': 2210}
 

@@ -39,6 +39,14 @@ class Node:
             else:
                 raise AttributeError('isLeaf is false and no children found.')
 
+    def text(self):
+        if self.isLeaf:
+            return self.word
+        else:
+            if self.left is not None and self.right is not None:
+                return '{0} {1}'.format(self.left.text(), self.right.text())
+            else:
+                raise AttributeError('isLeaf is false and no children found.')
 #
 # Class to represent a Tree.
 #
@@ -52,6 +60,9 @@ class Tree:
 
     def __str__(self):
         return '{0}'.format(self.root)
+
+    def text(self):
+        return self.root.text()
 
     @staticmethod
     def _parse(tree_string):
