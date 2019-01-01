@@ -38,13 +38,10 @@ class DataManager:
         if path is None:
             path = self._def_path
 
-        if max_rows is not None:
-            self._max_rows = max_rows
-
-        # Load data
-        self.x_train = self._load(self._make_file_name(path, 'train'), 100)
-        self.x_dev = self._load(self._make_file_name(path, 'dev'), 100)
-        self.x_test = self._load(self._make_file_name(path, 'test'), 100)
+        # Load data and store them as trees
+        self.x_train = self._load(self._make_file_name(path, 'train'), max_rows)
+        self.x_dev = self._load(self._make_file_name(path, 'dev'), max_rows)
+        self.x_test = self._load(self._make_file_name(path, 'test'), max_rows)
 
         # Build Corpus
         self.countvectorizer = CountVectorizer()
@@ -57,18 +54,15 @@ class DataManager:
     @staticmethod
     def _load(file_path, max_rows=None):
         """Loads entire content of the file."""
-
         s = []
-
         with open(file_path, 'r') as f:
-            if max_rows is None:
-                return f.read()
-            else:
-                for i, line in enumerate(f):
-                    if i < 100:
-                        s.append(line.strip())
-                    else:
-                        break
+            for i, line in enumerate(f):
+                if max_rows is None or i < max_rows:
+                    tree_string = line.strip()
+                    t = Tree(tree_string)
+                    s.append(t)
+                else:
+                    break
 
             return s
 
@@ -77,9 +71,7 @@ class DataManager:
         x = self.x_train + self.x_dev
         corpus = []
         for i in range(len(x)):
-            tree_string = x[i]
-            t = Tree(tree_string)
-            corpus.append(t.text())
+            corpus.append(x[i].text())
 
         # Use CountVectorizer to build dictionary of words.
         self.countvectorizer.fit(corpus)
