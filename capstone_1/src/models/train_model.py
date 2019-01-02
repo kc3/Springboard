@@ -102,13 +102,14 @@ def train_model(clf, params, score_func, x_train, y_train, x_dev, y_dev):
 #
 
 
-def train_all_models():
+def train_rntn():
     """Function that trains all models and saves the trained models."""
     data_manager = DataManager()
 
     clf = RNTN()
     params = {}
-    score_func = make_scorer(accuracy_score)
+    #score_func = make_scorer(accuracy_score)
+    score_func = clf.loss
     x_train = data_manager.x_train
     y_train = [random.randint(0, 4) for _ in range(len(x_train))]
     x_dev = data_manager.x_dev
@@ -117,9 +118,8 @@ def train_all_models():
     cv = train_model(clf, params, score_func, x_train, y_train, x_dev, y_dev)
 
     y_pred = cv.predict(data_manager.x_test)
-    print(y_pred)
 
     x_test = data_manager.x_test
     y_test = [random.randint(0, 4) for _ in range(len(x_test))]
     score = cv.score(x_test, y_test)
-    print(score)
+    print("Model Loss: {0}".format(score))

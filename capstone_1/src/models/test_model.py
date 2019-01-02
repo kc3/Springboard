@@ -9,7 +9,7 @@ from src.models import train_model
 
 class TestModel(object):
     def test_rntn(self):
-        train_model.train_all_models()
+        train_model.train_rntn()
 
     def test_rnn(self):
         pass
