@@ -4,11 +4,10 @@
 # Functionality to train all models in this project.
 #
 
+import numpy as np
 import random
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.model_selection import PredefinedSplit, GridSearchCV
-from sklearn.metrics import make_scorer
-from sklearn.metrics import accuracy_score
 from src.features.tree import Tree
 from src.models.RNTN import RNTN
 
@@ -93,7 +92,9 @@ def train_model(clf, params, score_func, x_train, y_train, x_dev, y_dev):
     # Find the best hyper-parameter using GridSearchCV
     model = GridSearchCV(clf, params, scoring=score_func, cv=cv)
 
-    model.fit(x_train+x_dev, y_train+y_dev)
+    x = np.array(x_train + x_dev).reshape(-1, 1)
+    y = np.array(y_train + y_dev).reshape(-1, 1)
+    model.fit(x, y)
 
     return model
 
@@ -107,9 +108,8 @@ def train_rntn():
     data_manager = DataManager()
 
     clf = RNTN()
-    params = {}
-    #score_func = make_scorer(accuracy_score)
-    score_func = clf.loss
+    params = {'num_epochs': [1, 2, 5]}
+    score_func = clf.loss()
     x_train = data_manager.x_train
     y_train = [random.randint(0, 4) for _ in range(len(x_train))]
     x_dev = data_manager.x_dev
@@ -120,6 +120,6 @@ def train_rntn():
     y_pred = cv.predict(data_manager.x_test)
 
     x_test = data_manager.x_test
-    y_test = [random.randint(0, 4) for _ in range(len(x_test))]
+    y_test = np.array([random.randint(0, 4) for _ in range(len(x_test))]).reshape(-1, 1)
     score = cv.score(x_test, y_test)
     print("Model Loss: {0}".format(score))
