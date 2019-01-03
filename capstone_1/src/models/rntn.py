@@ -7,6 +7,7 @@
 #
 
 import logging
+import os
 import numpy as np
 import random
 from sklearn.base import BaseEstimator, ClassifierMixin
@@ -80,13 +81,9 @@ class RNTN(BaseEstimator, ClassifierMixin):
         """
 
         #
-        # Model State
-        # Parameters with trailing underscore are set in fit by convention.
-        #
-
-        #
         # Set model name based on parameters
         # This is called here as parameters might be modified outside init using BaseEstimator set_params()
+        # Parameters with trailing underscore are set in fit by convention.
         #
         self.name_ = self._build_model_name()
 
@@ -96,16 +93,33 @@ class RNTN(BaseEstimator, ClassifierMixin):
         # x, y = check_X_y(x, y)
         # check_classification_targets(y)
 
-        # Initialize a session to run Tensorflow operations
+        # Initialize a session to run Tensorflow operations on a new graph.
         with tf.Graph().as_default(), tf.Session() as session:
 
             # Build model graph
             self._build_model_graph()
 
-            # Initialize all variables
+            # Initialize all variables in this graph
             session.run(tf.global_variables_initializer())
 
-            # Save model
+            # Run the optimizer num_epoch times.
+            # Each iteration is one full run through the train data set.
+            for epoch in range(self.num_epochs):
+
+                # Shuffle data set for every epoch
+                train_data_permutation = np.random.permutation(list(range(len(x))))
+
+                # Train using one sample at a time
+                for i in train_data_permutation:
+                    self._train_tree(x[i])
+
+            # Save model after full run
+            saver = tf.train.Saver()
+            save_dir = DataManager().def_models_path
+            if not os.path.exists(save_dir):
+                os.makedirs(save_dir)
+            save_path = '{0}/{1}.ckpt'.format(save_dir, self.name_)
+            saver.save(session, save_path)
 
             # Close session
             session.close()
@@ -213,7 +227,11 @@ class RNTN(BaseEstimator, ClassifierMixin):
             bs = tf.get_variable(name='bs',
                                  shape=[1, self.label_size_])
 
-        return
+    def _train_tree(self, tree):
+        """ Trains a single training sample.
+
+        :return:
+        """
 
     def _build_model_name(self):
         """ Builds model name for persistence and retrieval based on model parameters.
@@ -221,6 +239,7 @@ class RNTN(BaseEstimator, ClassifierMixin):
         :return:
             String containing model name.
         """
+
         params = self.get_params()
         params_string = '_'.join(['{0}={1}'.format(arg, value) for arg, value in params.items()])
         return 'RNTN_{0}'.format(params_string)
@@ -231,9 +250,9 @@ class RNTN(BaseEstimator, ClassifierMixin):
             - vocabulary_ (needed for word->index mapping)
             - V_ (vocabulary size)
         :return:
-
+            None.
         """
+
         # Get DataManager Instance to see the vocabulary
-        data_manager = DataManager()
-        self.vocabulary_ = data_manager.countvectorizer.vocabulary_
+        self.vocabulary_ = DataManager().countvectorizer.vocabulary_
         self.V_ = len(self.vocabulary_)

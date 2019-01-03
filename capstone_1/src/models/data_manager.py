@@ -12,7 +12,9 @@ from src.features.tree import Tree
 class DataManager:
     """Load interim data for trees as strings."""
 
-    _def_path = './src/data/interim/trainDevTestTrees_PTB/trees/'
+    _def_trees_path = './src/data/interim/trainDevTestTrees_PTB/trees/'
+
+    def_models_path = './models/'
 
     __instance = None
 
@@ -26,7 +28,7 @@ class DataManager:
 
     def __init__(self, path=None, max_rows=None):
         if path is None:
-            path = self._def_path
+            path = self._def_trees_path
 
         # Load data and store them as trees
         self.x_train = self._load(self._make_file_name(path, 'train'), max_rows)
