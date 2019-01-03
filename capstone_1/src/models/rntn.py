@@ -55,18 +55,22 @@ class RNTN(BaseEstimator, ClassifierMixin):
 
         The model implements the following equations for every intermediate node in two steps:
             Composition:
-                2. z = W*X + b
-                3. a = f(z)
+                2. zs = W*X + b (Standard term)
+                3. zt = X' * T * X (Neural Tensor term)
+                4. a = f(zs + zt)
 
             Projection:
-                4. y = U' * a + bs
+                5. y = U' * a + bs
 
         where:
             W: Weights to be computed by the model of shape [d, 2*d] for Composition step.
             X: Word embeddings for input words stacked together.  X is a column vector of shape [2*d, 1]
             b: bias term for the node of shape [d, 1]
+            T: Tensor of dimension [2*d, 2*d, d]. Each T[:,:,i] slice generates a scalar, which is one component of
+                the final word vector of dimension d.
             f: Non-linear function specifying the compositionality of the classifier. Relu in this case.
-            z: Input to non-linear function f.
+            zs: Standard RNN term input to non-linear function f of shape [d, 1]
+            zt: Neural tensor term input to non-linear function f of shape [d, 1]
             a: Output of non-linear function of shape [d, 1]
             U: Weights to be computed by model for Projection Step of shape [d, label_size] where label_size
                 is the number of classes.
@@ -115,10 +119,7 @@ class RNTN(BaseEstimator, ClassifierMixin):
 
             # Save model after full run
             saver = tf.train.Saver()
-            save_dir = DataManager().def_models_path
-            if not os.path.exists(save_dir):
-                os.makedirs(save_dir)
-            save_path = '{0}/{1}.ckpt'.format(save_dir, self.name_)
+            save_path = self._build_save_path()
             saver.save(session, save_path)
 
             # Close session
@@ -182,6 +183,8 @@ class RNTN(BaseEstimator, ClassifierMixin):
             L: Word embeddings for the vocabulary of shape [d, V]
                 where d = word embedding size and V = vocabulary size
             W: Weights to be computed by the model of shape [d, 2*d] for Composition step.
+            T: Tensor of dimension [2*d, 2*d, d]. Each T[:,:,i] slice generates a scalar, which is one component of
+                the final word vector of dimension d.
             b: bias term for the node of shape [d, 1]
             U: Weights to be computed by model for Projection Step of shape [d, label_size] where label_size
                 is the number of classes.
@@ -189,7 +192,8 @@ class RNTN(BaseEstimator, ClassifierMixin):
 
         The following variables are built for each training case outside this function.
             f: Non-linear function specifying the compositionality of the classifier. Relu in this case.
-            z: Input to non-linear function f.
+            zs: Standard RNN term input to non-linear function f of shape [d, 1]
+            zt: Neural tensor term input to non-linear function f of shape [d, 1]
             a: Output of non-linear function of shape [d, 1]
 
         :return:
@@ -218,6 +222,10 @@ class RNTN(BaseEstimator, ClassifierMixin):
                                 shape=[self.embedding_size, 1],
                                 initializer=tf.random_uniform_initializer(-1*uniform_r, uniform_r))
 
+            T = tf.get_variable(name='T',
+                                shape=[2*self.embedding_size, 2*self.embedding_size, self.embedding_size],
+                                initializer=tf.random_uniform_initializer(-1*uniform_r, uniform_r))
+
         # Build Weights and bias term for Projection Layer
         with tf.variable_scope('Projection'):
             U = tf.get_variable(name='U',
@@ -232,6 +240,12 @@ class RNTN(BaseEstimator, ClassifierMixin):
 
         :return:
         """
+
+        # Build a tensor array to store nodes.
+
+        # Recursively add logits to the tensor array
+
+        #
 
     def _build_model_name(self):
         """ Builds model name for persistence and retrieval based on model parameters.
@@ -256,3 +270,15 @@ class RNTN(BaseEstimator, ClassifierMixin):
         # Get DataManager Instance to see the vocabulary
         self.vocabulary_ = DataManager().countvectorizer.vocabulary_
         self.V_ = len(self.vocabulary_)
+
+    def _build_save_path(self):
+        """ Builds save path for the model
+
+        :return:
+            A string containing path.
+        """
+
+        save_dir = DataManager().def_models_path + '/' + self.name_
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
+        return '{0}/{1}.ckpt'.format(save_dir, self.name_)
