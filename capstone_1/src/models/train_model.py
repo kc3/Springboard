@@ -28,8 +28,8 @@ def train_model(clf, params, score_func, x_train, y_train, x_dev, y_dev):
     # Find the best hyper-parameter using GridSearchCV
     model = GridSearchCV(clf, params, scoring=score_func, cv=cv)
 
-    x = np.array(x_train + x_dev).reshape(-1, 1)
-    y = np.array(y_train + y_dev).reshape(-1, 1)
+    x = x_train + x_dev
+    y = y_train + y_dev
     model.fit(x, y)
 
     return model
@@ -44,7 +44,7 @@ def train_rntn():
     data_manager = DataManager()
 
     clf = RNTN()
-    params = {'num_epochs': [1, 2, 5]}
+    params = {'num_epochs': [1]}
     score_func = clf.loss()
     x_train = data_manager.x_train
     y_train = [random.randint(0, 4) for _ in range(len(x_train))]

@@ -6,6 +6,7 @@
 # Conforms to Estimator interface of scikit-learn.
 #
 
+from collections import OrderedDict
 import logging
 import os
 import numpy as np
@@ -100,6 +101,9 @@ class RNTN(BaseEstimator, ClassifierMixin):
         # Initialize a session to run Tensorflow operations on a new graph.
         with tf.Graph().as_default(), tf.Session() as session:
 
+            # Build placeholders for storing tree node information used to create computational graph.
+            self._build_train_tree_placeholders()
+
             # Build model graph
             self._build_model_graph()
 
@@ -118,12 +122,9 @@ class RNTN(BaseEstimator, ClassifierMixin):
                     self._train_tree(x[i])
 
             # Save model after full run
-            saver = tf.train.Saver()
-            save_path = self._build_save_path()
-            saver.save(session, save_path)
-
-            # Close session
-            session.close()
+            #saver = tf.train.Saver()
+            #save_path = self._build_save_path()
+            #saver.save(session, save_path)
 
         logging.info('Model {0} Training Complete.'.format(self.name_))
 
@@ -235,17 +236,93 @@ class RNTN(BaseEstimator, ClassifierMixin):
             bs = tf.get_variable(name='bs',
                                  shape=[1, self.label_size_])
 
+    def _build_train_tree_placeholders(self):
+        """ Builds placeholder nodes used to build computational graph for every tree node.
+
+        :return:
+            None.
+        """
+
+        with tf.name_scope('Inputs'):
+
+            # Boolean indicating if the node is a leaf
+            _ = tf.placeholder(tf.bool, shape=None, name='is_leaf')
+
+            # Int32 indicating word index, -1 for unknown
+            _ = tf.placeholder(tf.int32, shape=None, name='word_index')
+
+            # Int32 indicating left child within the flattened tree
+            _ = tf.placeholder(tf.int32, shape=None, name='left_child')
+
+            # Int32 indicating right child within the flattened tree
+            _ = tf.placeholder(tf.int32, shape=None, name='right_child')
+
+            # Int32 indicating label of the node
+            _ = tf.placeholder(tf.int32, shape=None, name='label')
+
     def _train_tree(self, tree):
         """ Trains a single training sample.
 
         :return:
         """
 
+        # Build feed dict
+        feed_dict = self._build_feed_dict(tree)
+
         # Build a tensor array to store nodes.
 
-        # Recursively add logits to the tensor array
+        # Add logits to the tensor array
 
-        #
+        # Loss
+
+        # Optimize
+
+    def _build_feed_dict(self, tree):
+        """ Prepares placeholders with feed dictionary variables.
+
+        1. Flattens the given tree into nodes using post-order traversal.
+        2. Adds each node to the placeholders.
+
+        :param tree:
+            Tree to process.
+        :return:
+            OrderedDict containing parameters for every node found in the tree.
+        """
+
+        # Flatten tree into a list using a stack
+        nodes = []
+        stack = [tree.root]
+
+        while stack:
+            node = stack.pop()
+            if not node.isLeaf:
+                stack.append(node.left)
+                stack.append(node.right)
+            # Insert at zero or if using append reverse to ensure children come before parent.
+            nodes.insert(0, node)
+
+        # Tree structure is captured in an OrderedDict with node as the key and order in which added as index.
+        nodes_dict = OrderedDict()
+        for i in range(len(nodes)):
+            nodes_dict[nodes[i]] = i
+
+        # Get Placeholders
+        is_leaf = tf.get_default_graph().get_tensor_by_name('Inputs/is_leaf:0')
+        word_index = tf.get_default_graph().get_tensor_by_name('Inputs/word_index:0')
+        left_child = tf.get_default_graph().get_tensor_by_name('Inputs/left_child:0')
+        right_child = tf.get_default_graph().get_tensor_by_name('Inputs/right_child:0')
+        label = tf.get_default_graph().get_tensor_by_name('Inputs/label:0')
+
+        # Create feed dict
+        feed_dict = {
+            is_leaf: [node.isLeaf for node in nodes],
+            word_index: [self.vocabulary_[node.word] if node.word in self.vocabulary_ else -1 for node in nodes],
+            left_child: [nodes_dict[node.left] if not node.isLeaf else -1 for node in nodes],
+            right_child: [nodes_dict[node.right] if not node.isLeaf else -1 for node in nodes],
+            label: [node.label for node in nodes]
+        }
+
+        return feed_dict
 
     def _build_model_name(self):
         """ Builds model name for persistence and retrieval based on model parameters.
