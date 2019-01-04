@@ -30,7 +30,7 @@ logging.basicConfig(level=logging.DEBUG,
 class RNTN(BaseEstimator, ClassifierMixin):
     """Recursive Tensor Neural Network Model. Conforms to Estimator interface of scikit-learn."""
 
-    def __init__(self, embedding_size=10, num_epochs=1):
+    def __init__(self, embedding_size=10, num_epochs=1, batch_size=100):
 
         #
         # Model Parameters
@@ -41,6 +41,9 @@ class RNTN(BaseEstimator, ClassifierMixin):
 
         # Number of epochs to run
         self.num_epochs = num_epochs
+
+        # Batch size (Number of trees to use in a batch)
+        self.batch_size = batch_size
 
     def fit(self, x, y=None):
         """Fits model to training samples.
@@ -332,7 +335,7 @@ class RNTN(BaseEstimator, ClassifierMixin):
         """
 
         params = self.get_params()
-        params_string = '_'.join(['{0}={1}'.format(arg, value) for arg, value in params.items()])
+        params_string = '_'.join(['{0}'.format(value) for _, value in params.items()])
         return 'RNTN_{0}'.format(params_string)
 
     def _get_vocabulary(self):
