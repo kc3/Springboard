@@ -44,7 +44,7 @@ def train_rntn():
     data_manager = DataManager()
 
     clf = RNTN()
-    params = {'batch_size': [1]}
+    params = {'batch_size': [10]}
     score_func = clf.loss()
     x_train = data_manager.x_train
     y_train = [random.randint(0, 4) for _ in range(len(x_train))]

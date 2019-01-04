@@ -22,7 +22,7 @@ import tensorflow as tf
 # Configure logging
 #
 
-logging.basicConfig(level=logging.DEBUG,
+logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s-%(process)d-%(name)s-%(levelname)s-%(message)s',
                     datefmt='%Y-%m-%d %H:%M:%S')
 
@@ -118,11 +118,16 @@ class RNTN(BaseEstimator, ClassifierMixin):
             for epoch in range(self.num_epochs):
 
                 # Shuffle data set for every epoch
-                train_data_permutation = np.random.permutation(list(range(len(x))))
+                np.random.shuffle(x)
+                logging.debug('First tree in x:{0}'.format(x[0].text()))
 
-                # Train using one sample at a time
-                for i in train_data_permutation:
-                    self._train_tree(x[i])
+                # Train using batch_size samples at a time
+                start_idx = 0
+                while start_idx < len(x):
+                    end_idx = min(start_idx + self.batch_size, len(x))
+                    logging.debug('Processing trees at indices ({0}, {1})'.format(start_idx, end_idx))
+                    self._train_tree(x[start_idx:end_idx])
+                    start_idx = end_idx
 
             # Save model after full run
             #saver = tf.train.Saver()
@@ -280,19 +285,75 @@ class RNTN(BaseEstimator, ClassifierMixin):
 
         # Optimize
 
-    def _build_feed_dict(self, tree):
+    def _build_feed_dict(self, trees):
         """ Prepares placeholders with feed dictionary variables.
 
         1. Flattens the given tree into nodes using post-order traversal.
         2. Adds each node to the placeholders.
 
-        :param tree:
-            Tree to process.
+        :param trees:
+            Trees to process.
         :return:
             OrderedDict containing parameters for every node found in the tree.
         """
 
+        # Values to prepare
+        is_leaf_vals = []
+        word_index_vals = []
+        left_child_vals = []
+        right_child_vals = []
+        label_vals = []
+
+        start_idx = 0
+
+        # Process all trees
+        for tree_idx in range(len(trees)):
+            tree_dict = self._tree_feed_data(trees[tree_idx], start_idx)
+            is_leaf_vals.append(tree_dict['is_leaf'])
+            word_index_vals.append(tree_dict['word_index'])
+            left_child_vals.append(tree_dict['left_child'])
+            right_child_vals.append(tree_dict['right_child'])
+            label_vals.append(tree_dict['label'])
+            start_idx += len(tree_dict['is_leaf'])
+
+        # Get Placeholders
+        is_leaf = tf.get_default_graph().get_tensor_by_name('Inputs/is_leaf:0')
+        word_index = tf.get_default_graph().get_tensor_by_name('Inputs/word_index:0')
+        left_child = tf.get_default_graph().get_tensor_by_name('Inputs/left_child:0')
+        right_child = tf.get_default_graph().get_tensor_by_name('Inputs/right_child:0')
+        label = tf.get_default_graph().get_tensor_by_name('Inputs/label:0')
+
+        # Create feed dict
+        feed_dict = {
+            is_leaf: is_leaf_vals,
+            word_index: word_index_vals,
+            left_child: left_child_vals,
+            right_child: right_child_vals,
+            label: label_vals
+        }
+
+        return feed_dict
+
+    def _tree_feed_data(self, tree, start_idx):
+        """ Gets feed data for a single tree.
+
+        :param tree:
+            Tree to get data for.
+        :param start_idx:
+            Start index of the node id.
+        :return:
+            Returns a dict containing the following data:
+                1. is_leaf - Boolean array indicating whether the node is leaf or intermediate node.
+                2. word_index - Array indicating vocabulary index of the word for leaf nodes or -1 otherwise.
+                3. left_child - Array of left children indices or -1 for leaf nodes.
+                4. right_child - Array of right children indices or -1 for leaf nodes.
+                5. label = Array of labels indicating sentiment label.
+        """
+
+        logging.debug('Processing tree: {0}'.format(tree.text()))
+
         # Flatten tree into a list using a stack
+        nodes_dict = OrderedDict()
         nodes = []
         stack = [tree.root]
 
@@ -304,25 +365,18 @@ class RNTN(BaseEstimator, ClassifierMixin):
             # Insert at zero or if using append reverse to ensure children come before parent.
             nodes.insert(0, node)
 
-        # Tree structure is captured in an OrderedDict with node as the key and order in which added as index.
-        nodes_dict = OrderedDict()
         for i in range(len(nodes)):
-            nodes_dict[nodes[i]] = i
+            nodes_dict[nodes[i]] = i + start_idx
 
-        # Get Placeholders
-        is_leaf = tf.get_default_graph().get_tensor_by_name('Inputs/is_leaf:0')
-        word_index = tf.get_default_graph().get_tensor_by_name('Inputs/word_index:0')
-        left_child = tf.get_default_graph().get_tensor_by_name('Inputs/left_child:0')
-        right_child = tf.get_default_graph().get_tensor_by_name('Inputs/right_child:0')
-        label = tf.get_default_graph().get_tensor_by_name('Inputs/label:0')
+        start_idx += len(nodes)
 
         # Create feed dict
         feed_dict = {
-            is_leaf: [node.isLeaf for node in nodes],
-            word_index: [self.vocabulary_[node.word] if node.word in self.vocabulary_ else -1 for node in nodes],
-            left_child: [nodes_dict[node.left] if not node.isLeaf else -1 for node in nodes],
-            right_child: [nodes_dict[node.right] if not node.isLeaf else -1 for node in nodes],
-            label: [node.label for node in nodes]
+            'is_leaf': [node.isLeaf for node in nodes],
+            'word_index': [self.vocabulary_[node.word] if node.word in self.vocabulary_ else -1 for node in nodes],
+            'left_child': [nodes_dict[node.left] if not node.isLeaf else -1 for node in nodes],
+            'right_child': [nodes_dict[node.right] if not node.isLeaf else -1 for node in nodes],
+            'label': [node.label for node in nodes]
         }
 
         return feed_dict
