@@ -101,14 +101,18 @@ class RNTN(BaseEstimator, ClassifierMixin):
         # x, y = check_X_y(x, y)
         # check_classification_targets(y)
 
+        # Get Vocabulary for building word embeddings.
+        self._get_vocabulary()
+
         # Initialize a session to run Tensorflow operations on a new graph.
         with tf.Graph().as_default(), tf.Session() as session:
 
             # Build placeholders for storing tree node information used to create computational graph.
-            self._build_train_tree_placeholders()
+            self._build_model_placeholders()
 
             # Build model graph
-            self._build_model_graph()
+            self.label_size_ = 5
+            self._build_model_graph_var(self.embedding_size, self.V_, self.label_size_)
 
             # Initialize all variables in this graph
             session.run(tf.global_variables_initializer())
@@ -126,7 +130,27 @@ class RNTN(BaseEstimator, ClassifierMixin):
                 while start_idx < len(x):
                     end_idx = min(start_idx + self.batch_size, len(x))
                     logging.debug('Processing trees at indices ({0}, {1})'.format(start_idx, end_idx))
-                    self._train_tree(x[start_idx:end_idx])
+
+                    # Build feed dict
+                    feed_dict = self._build_feed_dict(x[start_idx:end_idx])
+
+                    # Build batch graph
+                    logits, root_logits = self._build_batch_graph(feed_dict)
+
+                    # Build loss graph
+                    loss_graph = self._build_loss_graph(feed_dict)
+
+                    # Build optimizer graph
+                    optimizer_graph = self._build_optimizer_graph(loss_graph)
+
+                    # Train
+                    # Invoke the graph for optimizer this feed dict.
+                    session.run(optimizer_graph, feed_dict=feed_dict)
+
+                    # Loss
+                    # Invoke the graph for optimizer this feed dict.
+                    session.run(loss_graph, feed_dict=feed_dict)
+
                     start_idx = end_idx
 
             # Save model after full run
@@ -169,7 +193,7 @@ class RNTN(BaseEstimator, ClassifierMixin):
         return [np.exp(-1*random.randint(0, 4)) for _ in x]
 
     def _loss(self, logits, labels):
-        """ Cost function computational graph.
+        """ Cost function computational graph invocation.
 
         :param logits:
         :param labels:
@@ -185,7 +209,8 @@ class RNTN(BaseEstimator, ClassifierMixin):
         """
         return make_scorer(self._loss, greater_is_better=False, needs_proba=True)
 
-    def _build_model_graph(self):
+    @staticmethod
+    def _build_model_graph_var(embedding_size, vocabulary_size, label_size):
         """ Builds Computational Graph for model state in Tensorflow.
 
         Defines and initializes the following:
@@ -205,46 +230,49 @@ class RNTN(BaseEstimator, ClassifierMixin):
             zt: Neural tensor term input to non-linear function f of shape [d, 1]
             a: Output of non-linear function of shape [d, 1]
 
+        :param embedding_size:
+            Word embedding size
+        :param vocabulary_size:
+            Vocabulary size
+        :param label_size:
+            Label size
         :return:
             None.
         """
 
         uniform_r = 0.0001
-        self.label_size_ = 5
-
-        # Get Vocabulary for building word embeddings.
-        self._get_vocabulary()
 
         # Build Word Embeddings.
         with tf.variable_scope('Embeddings'):
-            L = tf.get_variable(name='L',
-                                shape=[self.embedding_size, self.V_],
+            _ = tf.get_variable(name='L',
+                                shape=[embedding_size, vocabulary_size],
                                 initializer=tf.random_uniform_initializer(-1*uniform_r, uniform_r))
 
         # Build Weights and bias term for Composition layer
         with tf.variable_scope('Composition'):
-            W = tf.get_variable(name='W',
-                                shape=[self.embedding_size, 2*self.embedding_size],
+            _ = tf.get_variable(name='W',
+                                shape=[embedding_size, 2*embedding_size],
                                 initializer=tf.random_uniform_initializer(-1*uniform_r, uniform_r))
 
-            b = tf.get_variable(name='b',
-                                shape=[self.embedding_size, 1],
+            _ = tf.get_variable(name='b',
+                                shape=[embedding_size, 1],
                                 initializer=tf.random_uniform_initializer(-1*uniform_r, uniform_r))
 
-            T = tf.get_variable(name='T',
-                                shape=[2*self.embedding_size, 2*self.embedding_size, self.embedding_size],
+            _ = tf.get_variable(name='T',
+                                shape=[2*embedding_size, 2*embedding_size, embedding_size],
                                 initializer=tf.random_uniform_initializer(-1*uniform_r, uniform_r))
 
         # Build Weights and bias term for Projection Layer
         with tf.variable_scope('Projection'):
-            U = tf.get_variable(name='U',
-                                shape=[self.embedding_size, self.label_size_],
+            _ = tf.get_variable(name='U',
+                                shape=[embedding_size, label_size],
                                 initializer=tf.random_uniform_initializer(-1*uniform_r, uniform_r))
 
-            bs = tf.get_variable(name='bs',
-                                 shape=[1, self.label_size_])
+            _ = tf.get_variable(name='bs',
+                                shape=[1, label_size])
 
-    def _build_train_tree_placeholders(self):
+    @staticmethod
+    def _build_model_placeholders():
         """ Builds placeholder nodes used to build computational graph for every tree node.
 
         :return:
@@ -268,22 +296,136 @@ class RNTN(BaseEstimator, ClassifierMixin):
             # Int32 indicating label of the node
             _ = tf.placeholder(tf.int32, shape=None, name='label')
 
-    def _train_tree(self, tree):
-        """ Trains a single training sample.
+    @staticmethod
+    def _build_batch_graph(feed_dict):
+        """ Builds Batch graph for this training batch using tf.while_loop from feed_dict.
+
+        This is the main method where both the Composition and Projection Layers are defined
+        for each tree node in the feed dict.
+
+        Composition layer is defined using a relu for by default.
+        TODO: Add param for other non-linear functions (Example, sigmoid, tanh)
+
+        Projection layer is defined as specified above in fit() documentation. The output of projection
+        layer is expected to be probability associated with each sentiment label with a value close to 1
+        for expected sentiment label and 0 for others.
+
+        :param feed_dict:
+            Feed dictionary to be passed to the batch graph functions
 
         :return:
+            None.
         """
 
-        # Build feed dict
-        feed_dict = self._build_feed_dict(tree)
+        #
+        # Composition functionality
+        #
 
-        # Build a tensor array to store nodes.
+        # Get length of the tensor array
+        # squeeze removes dimension of size 1
+        n = tf.squeeze(tf.shape(feed_dict['is_leaf']))
 
-        # Add logits to the tensor array
+        # Function to get word embedding
+        def get_word(word_idx):
+            with tf.variable_scope('Composition'):
+                tf.gather('L', word_idx, axis=1)
 
-        # Loss
+        #
+        # Composition functions
+        #
 
-        # Optimize
+        def compose_relu(left_child_idx, right_child_idx):
+            tensor_left = tf.gather(feed_dict['left_child'], left_child_idx)
+            tensor_right = tf.gather(feed_dict['right_child'], right_child_idx)
+            X = tf.concat([tensor_left, tensor_right], axis=1)
+
+            # Get model variables
+            with tf.variable_scope('Composition'):
+                W = tf.gather('W')
+                b = tf.gather('b')
+                T = tf.gather('T')
+
+            # zs = W * X + b
+            zs = tf.add(tf.matmul(W, X), b)
+
+            # zt = X' * T * X
+            t_slices = tf.unstack(T, axis=2)
+            n_t = tf.shape(T)[2]
+            ta_t = tf.TensorArray(tf.float32, size=n_t)
+
+            def cond_t(t_idx, _):
+                return tf.less(t_idx, n_t)
+
+            def body_t(t_idx, ta_t):
+                return [
+                    tf.add(t_idx, 1),
+                    ta_t.write(t_idx, tf.matmul(tf.matmul(tf.transpose(X), t_slices[t_idx]), X))
+                ]
+            zt = tf.stack(tf.while_loop(cond_t, body_t, [0, ta_t]))
+
+            # a = zs + zt
+            a = tf.add(zs, zt)
+
+            return tf.nn.relu(a)
+
+        # Define a tensor array to store the final outputs (softmax probabilities)
+        tensors = tf.TensorArray(tf.float32,
+                                 size=n,
+                                 dynamic_size=True,
+                                 clear_after_read=False,
+                                 infer_shape=False)
+
+        # Define loop condition
+        # node_idx < len(tensors)
+        cond = lambda tensors, node_idx: tf.less(node_idx, n)
+
+        # Define loop body
+        # Defines the
+        # If leaf return word embedding else combine left and right tensors
+        body = lambda tensors, i:\
+            [
+                tensors.write(i,
+                              tf.cond(
+                                  # If Leaf
+                                  tf.gather(feed_dict['is_leaf'], i),
+                                  # Get Word
+                                  get_word(tf.gather(feed_dict['word_index'], i)),
+                                  # Else, combine left and right
+                                  compose_relu(tensors.read(tf.gather(feed_dict['left_child'], i)),
+                                               tensors.read(tf.gather(feed_dict['right_child'], i))),
+                              )
+                              ),
+                tf.add(i, 1)
+            ]
+
+        # While loop invocation
+        tensors, _ = tf.while_loop(cond, body, [tensors, 0], parallel_iterations=1)
+
+        return tensors
+
+    @staticmethod
+    def _build_loss_graph(tensors):
+        """ Builds loss function graph.
+
+        Computes the cross entropy loss for sentiment prediction values.
+
+        :param tensors:
+            Logit function graph array for every node.
+
+        :return:
+            None.
+        """
+
+    @staticmethod
+    def _build_optimizer_graph(tensors):
+        """ Builds optimizer graph.
+
+        This is the primary graph tensor evaluated for training.
+        The optimizer is the standard GradientDescentOptimizer in tensorflow.
+
+        :return:
+            None.
+        """
 
     def _build_feed_dict(self, trees):
         """ Prepares placeholders with feed dictionary variables.
@@ -317,11 +459,12 @@ class RNTN(BaseEstimator, ClassifierMixin):
             start_idx += len(tree_dict['is_leaf'])
 
         # Get Placeholders
-        is_leaf = tf.get_default_graph().get_tensor_by_name('Inputs/is_leaf:0')
-        word_index = tf.get_default_graph().get_tensor_by_name('Inputs/word_index:0')
-        left_child = tf.get_default_graph().get_tensor_by_name('Inputs/left_child:0')
-        right_child = tf.get_default_graph().get_tensor_by_name('Inputs/right_child:0')
-        label = tf.get_default_graph().get_tensor_by_name('Inputs/label:0')
+        graph = tf.get_default_graph()
+        is_leaf = graph.get_tensor_by_name('Inputs/is_leaf:0')
+        word_index = graph.get_tensor_by_name('Inputs/word_index:0')
+        left_child = graph.get_tensor_by_name('Inputs/left_child:0')
+        right_child = graph.get_tensor_by_name('Inputs/right_child:0')
+        label = graph.get_tensor_by_name('Inputs/label:0')
 
         # Create feed dict
         feed_dict = {
