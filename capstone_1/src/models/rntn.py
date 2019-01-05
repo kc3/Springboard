@@ -30,7 +30,14 @@ logging.basicConfig(level=logging.INFO,
 class RNTN(BaseEstimator, ClassifierMixin):
     """Recursive Tensor Neural Network Model. Conforms to Estimator interface of scikit-learn."""
 
-    def __init__(self, embedding_size=10, num_epochs=1, batch_size=100):
+    def __init__(self,
+                 embedding_size=10,
+                 num_epochs=1,
+                 batch_size=100,
+                 compose_func='relu',
+                 training_rate=0.1,
+                 regularization_rate=0.1
+                 ):
 
         #
         # Model Parameters
@@ -44,6 +51,15 @@ class RNTN(BaseEstimator, ClassifierMixin):
 
         # Batch size (Number of trees to use in a batch)
         self.batch_size = batch_size
+
+        # Composition function for neural units
+        self.compose_func = compose_func
+
+        # Learning Rate
+        self.training_rate = training_rate
+
+        # Regularization Rate
+        self.regularization_rate = regularization_rate
 
     def fit(self, x, y=None):
         """Fits model to training samples.
@@ -134,22 +150,36 @@ class RNTN(BaseEstimator, ClassifierMixin):
                     # Build feed dict
                     feed_dict = self._build_feed_dict(x[start_idx:end_idx])
 
+                    # Get length of the tensor array
+                    # squeeze removes dimension of size 1
+                    n = tf.squeeze(tf.shape(feed_dict['is_leaf']))
+
+                    # Define a tensor array to store the logits (outputs from projection layer)
+                    logits = tf.TensorArray(tf.float32,
+                                            size=n,
+                                            dynamic_size=True,
+                                            clear_after_read=False,
+                                            infer_shape=False)
+
                     # Build batch graph
-                    logits, root_logits = self._build_batch_graph(feed_dict)
+                    logits = self._build_batch_graph(feed_dict, self.get_word, self._get_compose_func(), logits)
 
                     # Build loss graph
-                    loss_graph = self._build_loss_graph(feed_dict)
+                    loss_tensor = self._build_loss_graph(logits)
 
                     # Build optimizer graph
-                    optimizer_graph = self._build_optimizer_graph(loss_graph)
+                    optimizer_tensor = self._build_optimizer_graph(loss_tensor)
 
                     # Train
                     # Invoke the graph for optimizer this feed dict.
-                    session.run(optimizer_graph, feed_dict=feed_dict)
+                    session.run(optimizer_tensor, feed_dict=feed_dict)
 
                     # Loss
                     # Invoke the graph for optimizer this feed dict.
-                    session.run(loss_graph, feed_dict=feed_dict)
+                    session.run(loss_tensor, feed_dict=feed_dict)
+
+                    # Close the tensor array
+                    logits.close()
 
                     start_idx = end_idx
 
@@ -296,15 +326,102 @@ class RNTN(BaseEstimator, ClassifierMixin):
             # Int32 indicating label of the node
             _ = tf.placeholder(tf.int32, shape=None, name='label')
 
+    # Function to get word embedding
     @staticmethod
-    def _build_batch_graph(feed_dict):
+    def get_word(word_idx):
+        """ Get word embedding from model variable.
+
+        :param word_idx:
+            Index of the word from vocabulary.
+        :return:
+            The word embedding.
+        """
+        with tf.variable_scope('Composition'):
+            return tf.gather('L', word_idx, axis=1)
+
+    # Function to build composition function for a single non leaf node
+    @staticmethod
+    def compose_func_helper(X):
+        """ Composes graph for intermediate nodes.
+
+        :param X:
+            Concatenated vector for both children.
+        :return:
+            Composition Layer Input to be used in compose_func.
+        """
+        # Get model variables
+        with tf.variable_scope('Composition'):
+            W = tf.gather('W')
+            b = tf.gather('b')
+            T = tf.gather('T')
+
+        # zs = W * X + b
+        zs = tf.add(tf.matmul(W, X), b)
+
+        # zt = X' * T * X
+        t_slices = tf.unstack(T, axis=2)
+        n_t = tf.shape(T)[2]
+        ta_t = tf.TensorArray(tf.float32, size=n_t)
+
+        def cond_t(t_idx, _):
+            return tf.less(t_idx, n_t)
+
+        def body_t(t_idx, ta_t):
+            return [
+                tf.add(t_idx, 1),
+                ta_t.write(t_idx,
+                           tf.matmul(tf.matmul(tf.transpose(X), t_slices[t_idx]), X)
+                           )
+            ]
+
+        zt = tf.stack(tf.while_loop(cond_t, body_t, [0, ta_t]))
+
+        # a = zs + zt
+        return tf.add(zs, zt)
+
+    def compose_relu(self, X):
+        """ Rectified Linear Unit Composition.
+
+        :param X:
+            Concatenated vector of both children.
+        :return:
+            Logit after composition.
+        """
+        return tf.nn.relu(self.compose_func_helper(X))
+
+    def compose_tanh(self, X):
+        """ Tanh Composition.
+
+        :param X:
+            Concatenated vector of both children.
+        :return:
+            Logit after composition.
+        """
+        return tf.nn.tanh(self.compose_func_helper(X))
+
+    def _get_compose_func(self):
+        """ Gets composition function by name from model parameter compose_func.
+        :return:
+            Composition function.
+        """
+        if self.compose_func == 'relu':
+            compose_func_p = self.compose_relu
+        else:
+            if self.compose_func == 'tanh':
+                compose_func_p = self.compose_tanh
+            else:
+                raise ValueError("Unknown Composition Function: {0}".format(self.compose_func))
+
+        return compose_func_p
+
+    @staticmethod
+    def _build_batch_graph(feed_dict, get_word_func, compose_func, tensors):
         """ Builds Batch graph for this training batch using tf.while_loop from feed_dict.
 
         This is the main method where both the Composition and Projection Layers are defined
         for each tree node in the feed dict.
 
         Composition layer is defined using a relu for by default.
-        TODO: Add param for other non-linear functions (Example, sigmoid, tanh)
 
         Projection layer is defined as specified above in fit() documentation. The output of projection
         layer is expected to be probability associated with each sentiment label with a value close to 1
@@ -312,68 +429,19 @@ class RNTN(BaseEstimator, ClassifierMixin):
 
         :param feed_dict:
             Feed dictionary to be passed to the batch graph functions
-
+        :param get_word_func:
+            Function that will be evaluated to get word embedding.
+        :param compose_func:
+            Function that will be evaluated to compose two vectors.
+        :param tensors:
+            Array of logits that will be populated by this function.
         :return:
-            None.
+            An array of tensors containing probabilities for sentiment labels.
         """
-
-        #
-        # Composition functionality
-        #
 
         # Get length of the tensor array
         # squeeze removes dimension of size 1
         n = tf.squeeze(tf.shape(feed_dict['is_leaf']))
-
-        # Function to get word embedding
-        def get_word(word_idx):
-            with tf.variable_scope('Composition'):
-                tf.gather('L', word_idx, axis=1)
-
-        #
-        # Composition functions
-        #
-
-        def compose_relu(left_child_idx, right_child_idx):
-            tensor_left = tf.gather(feed_dict['left_child'], left_child_idx)
-            tensor_right = tf.gather(feed_dict['right_child'], right_child_idx)
-            X = tf.concat([tensor_left, tensor_right], axis=1)
-
-            # Get model variables
-            with tf.variable_scope('Composition'):
-                W = tf.gather('W')
-                b = tf.gather('b')
-                T = tf.gather('T')
-
-            # zs = W * X + b
-            zs = tf.add(tf.matmul(W, X), b)
-
-            # zt = X' * T * X
-            t_slices = tf.unstack(T, axis=2)
-            n_t = tf.shape(T)[2]
-            ta_t = tf.TensorArray(tf.float32, size=n_t)
-
-            def cond_t(t_idx, _):
-                return tf.less(t_idx, n_t)
-
-            def body_t(t_idx, ta_t):
-                return [
-                    tf.add(t_idx, 1),
-                    ta_t.write(t_idx, tf.matmul(tf.matmul(tf.transpose(X), t_slices[t_idx]), X))
-                ]
-            zt = tf.stack(tf.while_loop(cond_t, body_t, [0, ta_t]))
-
-            # a = zs + zt
-            a = tf.add(zs, zt)
-
-            return tf.nn.relu(a)
-
-        # Define a tensor array to store the final outputs (softmax probabilities)
-        tensors = tf.TensorArray(tf.float32,
-                                 size=n,
-                                 dynamic_size=True,
-                                 clear_after_read=False,
-                                 infer_shape=False)
 
         # Define loop condition
         # node_idx < len(tensors)
@@ -389,12 +457,13 @@ class RNTN(BaseEstimator, ClassifierMixin):
                                   # If Leaf
                                   tf.gather(feed_dict['is_leaf'], i),
                                   # Get Word
-                                  get_word(tf.gather(feed_dict['word_index'], i)),
+                                  get_word_func(tf.gather(feed_dict['word_index'], i)),
                                   # Else, combine left and right
-                                  compose_relu(tensors.read(tf.gather(feed_dict['left_child'], i)),
-                                               tensors.read(tf.gather(feed_dict['right_child'], i))),
-                              )
-                              ),
+                                  compose_func(tf.concat(
+                                      [
+                                          tensors.read(tf.gather(feed_dict['left_child'], i)),
+                                          tensors.read(tf.gather(feed_dict['right_child'], i))
+                                      ], axis=1)))),
                 tf.add(i, 1)
             ]
 
@@ -404,28 +473,39 @@ class RNTN(BaseEstimator, ClassifierMixin):
         return tensors
 
     @staticmethod
-    def _build_loss_graph(tensors):
+    def _build_loss_graph(logits):
         """ Builds loss function graph.
 
         Computes the cross entropy loss for sentiment prediction values.
 
-        :param tensors:
+        :param logits:
             Logit function graph array for every node.
 
         :return:
-            None.
+            Loss graph tensor for the whole network.
         """
+        # Get Cross Entropy Loss
+        cross_entropy_loss = 
+
+        # Get Regularization Loss
+        # Return Total Loss
+        return None
 
     @staticmethod
-    def _build_optimizer_graph(tensors):
+    def _build_optimizer_graph(loss_tensor):
         """ Builds optimizer graph.
 
         This is the primary graph tensor evaluated for training.
         The optimizer is the standard GradientDescentOptimizer in tensorflow.
 
+        Back propagation is handled by the optimizer inside tensorflow.
+
+        :param loss_tensor:
+            Loss Tensor.
         :return:
-            None.
+            Optimization Tensor.
         """
+        return None
 
     def _build_feed_dict(self, trees):
         """ Prepares placeholders with feed dictionary variables.
