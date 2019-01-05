@@ -120,7 +120,7 @@ class RNTN(BaseEstimator, ClassifierMixin):
         # Get Vocabulary for building word embeddings.
         self._get_vocabulary()
 
-        # Initialize a session to run Tensorflow operations on a new graph.
+        # Initialize a session to run tensorflow operations on a new graph.
         with tf.Graph().as_default(), tf.Session() as session:
 
             # Build placeholders for storing tree node information used to create computational graph.
@@ -164,11 +164,14 @@ class RNTN(BaseEstimator, ClassifierMixin):
                     # Build batch graph
                     logits = self._build_batch_graph(feed_dict, self.get_word, self._get_compose_func(), logits)
 
+                    # Build labels tensor
+                    labels = tf.one_hot(feed_dict['labels'], self.label_size_)
+
                     # Build loss graph
-                    loss_tensor = self._build_loss_graph(logits)
+                    loss_tensor = self._build_loss_graph(labels, logits, self.regularization_rate)
 
                     # Build optimizer graph
-                    optimizer_tensor = self._build_optimizer_graph(loss_tensor)
+                    optimizer_tensor = self._build_optimizer_graph(loss_tensor, self.training_rate)
 
                     # Train
                     # Invoke the graph for optimizer this feed dict.
@@ -184,9 +187,9 @@ class RNTN(BaseEstimator, ClassifierMixin):
                     start_idx = end_idx
 
             # Save model after full run
-            #saver = tf.train.Saver()
-            #save_path = self._build_save_path()
-            #saver.save(session, save_path)
+            saver = tf.train.Saver()
+            save_path = self._build_save_path()
+            saver.save(session, save_path)
 
         logging.info('Model {0} Training Complete.'.format(self.name_))
 
@@ -435,8 +438,8 @@ class RNTN(BaseEstimator, ClassifierMixin):
             Function that will be evaluated to compose two vectors.
         :param tensors:
             Array of logits that will be populated by this function.
-        :return:
-            An array of tensors containing probabilities for sentiment labels.
+        :return logits:
+            logits: An array of tensors containing unscaled probabilities for sentiment labels.
         """
 
         # Get length of the tensor array
@@ -473,26 +476,39 @@ class RNTN(BaseEstimator, ClassifierMixin):
         return tensors
 
     @staticmethod
-    def _build_loss_graph(logits):
+    def _build_loss_graph(labels, logits, regularization_rate):
         """ Builds loss function graph.
 
         Computes the cross entropy loss for sentiment prediction values.
 
+        :param labels:
+            Tensor of ground truth labels.
         :param logits:
-            Logit function graph array for every node.
-
+            Logits (unscaled probabilities) for every node.
+        :param regularization_rate:
+            Regularization rate.
         :return:
-            Loss graph tensor for the whole network.
+            Loss tensor for the whole network.
         """
         # Get Cross Entropy Loss
-        cross_entropy_loss = 
+        cross_entropy_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=labels, logits=logits)
 
-        # Get Regularization Loss
+        # Get Regularization Loss for weight terms excluding biases
+        with tf.variable_scope('Composition'):
+            regularization_composition_loss = tf.nn.l2_loss('W') + tf.nn.l2_loss('T')
+
+        with tf.variable_scope('Projection'):
+            regularization_projection_loss = tf.nn.l2_loss('U')
+
+        regularization_loss = tf.multiply(
+            tf.add(regularization_composition_loss, regularization_projection_loss),
+            regularization_rate)
+
         # Return Total Loss
-        return None
+        return tf.add(cross_entropy_loss, regularization_loss)
 
     @staticmethod
-    def _build_optimizer_graph(loss_tensor):
+    def _build_optimizer_graph(learning_rate, loss_tensor):
         """ Builds optimizer graph.
 
         This is the primary graph tensor evaluated for training.
@@ -500,12 +516,14 @@ class RNTN(BaseEstimator, ClassifierMixin):
 
         Back propagation is handled by the optimizer inside tensorflow.
 
+        :param learning_rate:
+            Learning rate.
         :param loss_tensor:
             Loss Tensor.
         :return:
             Optimization Tensor.
         """
-        return None
+        return tf.train.GradientDescentOptimizer(learning_rate).minimize(loss_tensor)
 
     def _build_feed_dict(self, trees):
         """ Prepares placeholders with feed dictionary variables.
