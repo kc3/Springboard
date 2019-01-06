@@ -150,9 +150,12 @@ class RNTN(BaseEstimator, ClassifierMixin):
                     # Build feed dict
                     feed_dict = self._build_feed_dict(x[start_idx:end_idx])
 
+                    # Get labels
+                    labels = tf.get_default_graph().get_tensor_by_name('Inputs/label:0')
+
                     # Get length of the tensor array
-                    # squeeze removes dimension of size 1
-                    n = tf.squeeze(tf.shape(feed_dict['is_leaf']))
+                    n = tf.squeeze(tf.shape(labels)).eval(feed_dict)
+                    logging.info('Feed Dict has {0} labels'.format(n))
 
                     # Define a tensor array to store the logits (outputs from projection layer)
                     logits = tf.TensorArray(tf.float32,
@@ -162,13 +165,13 @@ class RNTN(BaseEstimator, ClassifierMixin):
                                             infer_shape=False)
 
                     # Build batch graph
-                    logits = self._build_batch_graph(feed_dict, self.get_word, self._get_compose_func(), logits)
+                    logits = self._build_batch_graph(self.get_word, self._get_compose_func(), logits)
 
                     # Build labels tensor
-                    labels = tf.one_hot(feed_dict['labels'], self.label_size_)
+                    labels_encoded = tf.one_hot(labels, self.label_size_)
 
                     # Build loss graph
-                    loss_tensor = self._build_loss_graph(labels, logits, self.regularization_rate)
+                    loss_tensor = self._build_loss_graph(labels_encoded, logits, self.regularization_rate)
 
                     # Build optimizer graph
                     optimizer_tensor = self._build_optimizer_graph(loss_tensor, self.training_rate)
@@ -313,7 +316,6 @@ class RNTN(BaseEstimator, ClassifierMixin):
         """
 
         with tf.name_scope('Inputs'):
-
             # Boolean indicating if the node is a leaf
             _ = tf.placeholder(tf.bool, shape=None, name='is_leaf')
 
@@ -418,7 +420,7 @@ class RNTN(BaseEstimator, ClassifierMixin):
         return compose_func_p
 
     @staticmethod
-    def _build_batch_graph(feed_dict, get_word_func, compose_func, tensors):
+    def _build_batch_graph(get_word_func, compose_func, tensors):
         """ Builds Batch graph for this training batch using tf.while_loop from feed_dict.
 
         This is the main method where both the Composition and Projection Layers are defined
@@ -430,8 +432,6 @@ class RNTN(BaseEstimator, ClassifierMixin):
         layer is expected to be probability associated with each sentiment label with a value close to 1
         for expected sentiment label and 0 for others.
 
-        :param feed_dict:
-            Feed dictionary to be passed to the batch graph functions
         :param get_word_func:
             Function that will be evaluated to get word embedding.
         :param compose_func:
@@ -442,9 +442,16 @@ class RNTN(BaseEstimator, ClassifierMixin):
             logits: An array of tensors containing unscaled probabilities for sentiment labels.
         """
 
+        # Get Placeholders
+        graph = tf.get_default_graph()
+        is_leaf = graph.get_tensor_by_name('Inputs/is_leaf:0')
+        word_index = graph.get_tensor_by_name('Inputs/word_index:0')
+        left_child = graph.get_tensor_by_name('Inputs/left_child:0')
+        right_child = graph.get_tensor_by_name('Inputs/right_child:0')
+
         # Get length of the tensor array
         # squeeze removes dimension of size 1
-        n = tf.squeeze(tf.shape(feed_dict['is_leaf']))
+        n = tf.squeeze(tf.shape(is_leaf))
 
         # Define loop condition
         # node_idx < len(tensors)
@@ -458,14 +465,14 @@ class RNTN(BaseEstimator, ClassifierMixin):
                 tensors.write(i,
                               tf.cond(
                                   # If Leaf
-                                  tf.gather(feed_dict['is_leaf'], i),
+                                  tf.gather(is_leaf, i),
                                   # Get Word
-                                  get_word_func(tf.gather(feed_dict['word_index'], i)),
+                                  get_word_func(tf.gather(word_index, i)),
                                   # Else, combine left and right
                                   compose_func(tf.concat(
                                       [
-                                          tensors.read(tf.gather(feed_dict['left_child'], i)),
-                                          tensors.read(tf.gather(feed_dict['right_child'], i))
+                                          tensors.read(tf.gather(left_child, i)),
+                                          tensors.read(tf.gather(right_child, i))
                                       ], axis=1)))),
                 tf.add(i, 1)
             ]
@@ -482,7 +489,7 @@ class RNTN(BaseEstimator, ClassifierMixin):
         Computes the cross entropy loss for sentiment prediction values.
 
         :param labels:
-            Tensor of ground truth labels.
+            One hot encoded ground truth labels.
         :param logits:
             Logits (unscaled probabilities) for every node.
         :param regularization_rate:
@@ -491,7 +498,8 @@ class RNTN(BaseEstimator, ClassifierMixin):
             Loss tensor for the whole network.
         """
         # Get Cross Entropy Loss
-        cross_entropy_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=labels, logits=logits)
+        cross_entropy_loss = tf.reduce_sum(
+            tf.nn.sparse_softmax_cross_entropy_with_logits(labels=labels, logits=logits))
 
         # Get Regularization Loss for weight terms excluding biases
         with tf.variable_scope('Composition'):
@@ -533,7 +541,7 @@ class RNTN(BaseEstimator, ClassifierMixin):
 
         :param trees:
             Trees to process.
-        :return:
+        :return feed_dict:
             OrderedDict containing parameters for every node found in the tree.
         """
 
@@ -549,11 +557,11 @@ class RNTN(BaseEstimator, ClassifierMixin):
         # Process all trees
         for tree_idx in range(len(trees)):
             tree_dict = self._tree_feed_data(trees[tree_idx], start_idx)
-            is_leaf_vals.append(tree_dict['is_leaf'])
-            word_index_vals.append(tree_dict['word_index'])
-            left_child_vals.append(tree_dict['left_child'])
-            right_child_vals.append(tree_dict['right_child'])
-            label_vals.append(tree_dict['label'])
+            is_leaf_vals.extend(tree_dict['is_leaf'])
+            word_index_vals.extend(tree_dict['word_index'])
+            left_child_vals.extend(tree_dict['left_child'])
+            right_child_vals.extend(tree_dict['right_child'])
+            label_vals.extend(tree_dict['label'])
             start_idx += len(tree_dict['is_leaf'])
 
         # Get Placeholders
