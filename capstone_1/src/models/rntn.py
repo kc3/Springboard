@@ -341,8 +341,12 @@ class RNTN(BaseEstimator, ClassifierMixin):
         :return:
             The word embedding.
         """
-        with tf.variable_scope('Composition'):
-            return tf.gather('L', word_idx, axis=1)
+        with tf.variable_scope('Embeddings', reuse=True):
+            L = tf.get_variable('L')
+            word = tf.cond(tf.less(word_idx, 0),
+                           tf.random_uniform(tf.gather(L, 0, axis=1).shape, -0.0001, maxval=0.0001),
+                           tf.gather(L, word_idx, axis=1))
+            return word
 
     # Function to build composition function for a single non leaf node
     @staticmethod
