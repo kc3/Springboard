@@ -344,8 +344,8 @@ class RNTN(BaseEstimator, ClassifierMixin):
         with tf.variable_scope('Embeddings', reuse=True):
             L = tf.get_variable('L')
             word = tf.cond(tf.less(word_idx, 0),
-                           tf.random_uniform(tf.gather(L, 0, axis=1).shape, -0.0001, maxval=0.0001),
-                           tf.gather(L, word_idx, axis=1))
+                           lambda: tf.random_uniform(tf.gather(L, 0, axis=1).shape, -0.0001, maxval=0.0001),
+                           lambda: tf.gather(L, word_idx, axis=1))
             return word
 
     # Function to build composition function for a single non leaf node
@@ -359,10 +359,10 @@ class RNTN(BaseEstimator, ClassifierMixin):
             Composition Layer Input to be used in compose_func.
         """
         # Get model variables
-        with tf.variable_scope('Composition'):
-            W = tf.gather('W')
-            b = tf.gather('b')
-            T = tf.gather('T')
+        with tf.variable_scope('Composition', reuse=True):
+            W = tf.get_variable('W')
+            b = tf.get_variable('b')
+            T = tf.get_variable('T')
 
         # zs = W * X + b
         zs = tf.add(tf.matmul(W, X), b)
@@ -372,14 +372,14 @@ class RNTN(BaseEstimator, ClassifierMixin):
         n_t = tf.shape(T)[2]
         ta_t = tf.TensorArray(tf.float32, size=n_t)
 
-        def cond_t(t_idx, _):
-            return tf.less(t_idx, n_t)
+        def cond_t(i, _):
+            return tf.less(i, n_t)
 
-        def body_t(t_idx, ta_t):
+        def body_t(i, ta_t):
             return [
-                tf.add(t_idx, 1),
-                ta_t.write(t_idx,
-                           tf.matmul(tf.matmul(tf.transpose(X), t_slices[t_idx]), X)
+                tf.add(i, 1),
+                ta_t.write(i,
+                           tf.matmul(tf.matmul(tf.transpose(X), t_slices[i]), X)
                            )
             ]
 

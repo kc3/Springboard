@@ -13,8 +13,8 @@ class TestModel(object):
     # def test_rntn_estimator(self):
     #    check_estimator(train_model.RNTN)
 
-    def test_rntn(self):
-        train_model.train_rntn()
+    #def test_rntn(self):
+    #    train_model.train_rntn()
 
     def test_rnn(self):
         pass
