@@ -8,6 +8,7 @@
 #from src.models import train_model
 from src.models.rntn import RNTN
 from src.models.data_manager import DataManager
+import tensorflow as tf
 
 class TestRNTN(object):
 
@@ -24,16 +25,32 @@ class TestRNTN(object):
 
     def test_fit(self):
         data_mgr = DataManager()
-        r = RNTN()
 
-        x = data_mgr.x_train + data_mgr.x_dev
-        r.fit(x, None)
+        with tf.Session() as s:
+            r = RNTN()
+            x = data_mgr.x_train
+            r.fit(x, None)
 
-    def test_word(self):
-        data_mgr = DataManager()
-        r = RNTN()
-        r._get_vocabulary()
-        r.label_size_ = 5
-        r._build_model_graph_var(r.embedding_size, r.V_, r.label_size_)
-        t = r.get_word(23)
-        assert t is not None
+    # def test_word(self):
+    #     data_mgr = DataManager()
+    #
+    #     with tf.Session() as s:
+    #         r = RNTN()
+    #         r._get_vocabulary()
+    #         r.label_size_ = 5
+    #         r._build_model_graph_var(r.embedding_size, r.V_, r.label_size_)
+    #         s.run(tf.global_variables_initializer())
+    #         t = r.get_word(23)
+    #         assert t is not None
+    #         assert t.shape == [r.embedding_size, 1]
+
+    # def test_word_missing(self):
+    #     data_mgr = DataManager()
+    #
+    #     with tf.Session() as s:
+    #         s.run(tf.global_variables_initializer())
+    #         r = RNTN()
+    #         r._get_vocabulary()
+    #         r.label_size_ = 5
+    #         t = r.get_word(-1)
+    #         assert t is not None

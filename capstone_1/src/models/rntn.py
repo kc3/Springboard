@@ -61,6 +61,8 @@ class RNTN(BaseEstimator, ClassifierMixin):
         # Regularization Rate
         self.regularization_rate = regularization_rate
 
+        logging.info('Model RNTN initialization complete.')
+
     def fit(self, x, y=None):
         """Fits model to training samples.
         Called by GridSearchCV to train estimators.
@@ -94,7 +96,7 @@ class RNTN(BaseEstimator, ClassifierMixin):
             a: Output of non-linear function of shape [d, 1]
             U: Weights to be computed by model for Projection Step of shape [d, label_size] where label_size
                 is the number of classes.
-            bs: Bias term for Projection Step of shape [1, label_size]
+            bs: Bias term for Projection Step of shape [label_size, 1]
 
         :param x:
             Parsed Trees (training samples)
@@ -103,6 +105,8 @@ class RNTN(BaseEstimator, ClassifierMixin):
         :return:
             self (expected by BaseEstimator interface)
         """
+
+        logging.info('Model RNTN fit() called on {0} training samples.'.format(len(x)))
 
         #
         # Set model name based on parameters
@@ -167,22 +171,20 @@ class RNTN(BaseEstimator, ClassifierMixin):
                     # Build batch graph
                     logits = self._build_batch_graph(self.get_word, self._get_compose_func(), logits)
 
-                    # Build labels tensor
-                    labels_encoded = tf.one_hot(labels, self.label_size_)
-
                     # Build loss graph
-                    loss_tensor = self._build_loss_graph(labels_encoded, logits, self.regularization_rate)
+                    loss_tensor = self._build_loss_graph(labels, logits, self.regularization_rate)
+
+                    # Loss
+                    # Invoke the graph for loss function with this feed dict.
+                    logging.info('Loss = {0}'.format(loss_tensor.eval(feed_dict)))
+                    #session.run(loss_tensor, feed_dict=feed_dict)
 
                     # Build optimizer graph
-                    optimizer_tensor = self._build_optimizer_graph(loss_tensor, self.training_rate)
+                    optimizer_tensor = self._build_optimizer_graph(self.training_rate, loss_tensor)
 
                     # Train
                     # Invoke the graph for optimizer this feed dict.
                     session.run(optimizer_tensor, feed_dict=feed_dict)
-
-                    # Loss
-                    # Invoke the graph for optimizer this feed dict.
-                    session.run(loss_tensor, feed_dict=feed_dict)
 
                     # Close the tensor array
                     logits.close()
@@ -215,6 +217,7 @@ class RNTN(BaseEstimator, ClassifierMixin):
         # Input validation
         # x = check_array(x)
 
+        logging.info('predict called.')
         return [random.randint(0, 4) for _ in range(len(x))]
 
     def predict_proba(self, x):
@@ -226,6 +229,7 @@ class RNTN(BaseEstimator, ClassifierMixin):
         :return:
             Softmax probabilities of each class.
         """
+        logging.info('predict_proba called.')
         return [np.exp(-1*random.randint(0, 4)) for _ in x]
 
     def _loss(self, logits, labels):
@@ -279,13 +283,13 @@ class RNTN(BaseEstimator, ClassifierMixin):
         uniform_r = 0.0001
 
         # Build Word Embeddings.
-        with tf.variable_scope('Embeddings'):
+        with tf.variable_scope('Embeddings', reuse=tf.AUTO_REUSE):
             _ = tf.get_variable(name='L',
                                 shape=[embedding_size, vocabulary_size],
                                 initializer=tf.random_uniform_initializer(-1*uniform_r, uniform_r))
 
         # Build Weights and bias term for Composition layer
-        with tf.variable_scope('Composition'):
+        with tf.variable_scope('Composition', reuse=tf.AUTO_REUSE):
             _ = tf.get_variable(name='W',
                                 shape=[embedding_size, 2*embedding_size],
                                 initializer=tf.random_uniform_initializer(-1*uniform_r, uniform_r))
@@ -299,13 +303,13 @@ class RNTN(BaseEstimator, ClassifierMixin):
                                 initializer=tf.random_uniform_initializer(-1*uniform_r, uniform_r))
 
         # Build Weights and bias term for Projection Layer
-        with tf.variable_scope('Projection'):
+        with tf.variable_scope('Projection', reuse=tf.AUTO_REUSE):
             _ = tf.get_variable(name='U',
                                 shape=[embedding_size, label_size],
                                 initializer=tf.random_uniform_initializer(-1*uniform_r, uniform_r))
 
             _ = tf.get_variable(name='bs',
-                                shape=[1, label_size])
+                                shape=[label_size, 1])
 
     @staticmethod
     def _build_model_placeholders():
@@ -346,7 +350,8 @@ class RNTN(BaseEstimator, ClassifierMixin):
             word = tf.cond(tf.less(word_idx, 0),
                            lambda: tf.random_uniform(tf.gather(L, 0, axis=1).shape, -0.0001, maxval=0.0001),
                            lambda: tf.gather(L, word_idx, axis=1))
-            return word
+            word_col = tf.expand_dims(word, axis=1)
+            return word_col
 
     # Function to build composition function for a single non leaf node
     @staticmethod
@@ -369,21 +374,28 @@ class RNTN(BaseEstimator, ClassifierMixin):
 
         # zt = X' * T * X
         t_slices = tf.unstack(T, axis=2)
-        n_t = tf.shape(T)[2]
-        ta_t = tf.TensorArray(tf.float32, size=n_t)
+        n = tf.shape(T)[2]
+        ta = tf.TensorArray(tf.float32, size=n)
 
-        def cond_t(i, _):
-            return tf.less(i, n_t)
+        def cond_t(i, ta):
+            return tf.less(i, n)
 
-        def body_t(i, ta_t):
-            return [
-                tf.add(i, 1),
-                ta_t.write(i,
-                           tf.matmul(tf.matmul(tf.transpose(X), t_slices[i]), X)
-                           )
-            ]
+        def body_t(i, ta):
+            tslice = tf.gather(t_slices, i)
+            m1 = tf.matmul(tslice, X)
+            tr = tf.transpose(X)
+            m2 = tf.matmul(tr, m1)
+            ta = ta.write(i, m2)
+            i = tf.add(i, 1)
+            return [i, ta]
+            #return \
+            #    [
+            #        tf.add(i, 1),
+            #        ta.write(i, tf.matmul(tf.matmul(tf.transpose(X), tf.gather(t_slices, i), X)))
+            #    ]
 
-        zt = tf.stack(tf.while_loop(cond_t, body_t, [0, ta_t]))
+        _, ta = tf.while_loop(cond_t, body_t, [0, ta], parallel_iterations=1)
+        zt = ta.concat()
 
         # a = zs + zt
         return tf.add(zs, zt)
@@ -471,20 +483,28 @@ class RNTN(BaseEstimator, ClassifierMixin):
                                   # If Leaf
                                   tf.gather(is_leaf, i),
                                   # Get Word
-                                  get_word_func(tf.gather(word_index, i)),
+                                  lambda: get_word_func(tf.gather(word_index, i)),
                                   # Else, combine left and right
-                                  compose_func(tf.concat(
+                                  lambda: compose_func(tf.concat(
                                       [
                                           tensors.read(tf.gather(left_child, i)),
                                           tensors.read(tf.gather(right_child, i))
-                                      ], axis=1)))),
+                                      ], axis=0)))),
                 tf.add(i, 1)
             ]
 
         # While loop invocation
         tensors, _ = tf.while_loop(cond, body, [tensors, 0], parallel_iterations=1)
 
-        return tensors
+        # Concatenate and reshape tensor array for projection
+        p = tf.reshape(tf.squeeze(tensors.concat()), [-1, n])
+
+        # Add projection layer
+        with tf.variable_scope('Projection', reuse=True):
+            U = tf.get_variable('U')
+            bs = tf.get_variable('bs')
+
+        return tf.transpose(tf.matmul(tf.transpose(U), p) + bs)
 
     @staticmethod
     def _build_loss_graph(labels, logits, regularization_rate):
@@ -506,11 +526,14 @@ class RNTN(BaseEstimator, ClassifierMixin):
             tf.nn.sparse_softmax_cross_entropy_with_logits(labels=labels, logits=logits))
 
         # Get Regularization Loss for weight terms excluding biases
-        with tf.variable_scope('Composition'):
-            regularization_composition_loss = tf.nn.l2_loss('W') + tf.nn.l2_loss('T')
+        with tf.variable_scope('Composition', reuse=True):
+            W = tf.get_variable('W')
+            T = tf.get_variable('T')
+            regularization_composition_loss = tf.nn.l2_loss(W) + tf.nn.l2_loss(T)
 
-        with tf.variable_scope('Projection'):
-            regularization_projection_loss = tf.nn.l2_loss('U')
+        with tf.variable_scope('Projection', reuse=True):
+            U = tf.get_variable('U')
+            regularization_projection_loss = tf.nn.l2_loss(U)
 
         regularization_loss = tf.multiply(
             tf.add(regularization_composition_loss, regularization_projection_loss),
