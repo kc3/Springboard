@@ -375,24 +375,19 @@ class RNTN(BaseEstimator, ClassifierMixin):
         # zt = X' * T * X
         t_slices = tf.unstack(T, axis=2)
         n = tf.shape(T)[2]
-        ta = tf.TensorArray(tf.float32, size=n)
+        ta = tf.TensorArray(tf.float32, size=n, colocate_with_first_write_call=True)
 
         def cond_t(i, ta):
             return tf.less(i, n)
 
         def body_t(i, ta):
-            tslice = tf.gather(t_slices, i)
-            m1 = tf.matmul(tslice, X)
-            tr = tf.transpose(X)
-            m2 = tf.matmul(tr, m1)
-            ta = ta.write(i, m2)
-            i = tf.add(i, 1)
-            return [i, ta]
-            #return \
-            #    [
-            #        tf.add(i, 1),
-            #        ta.write(i, tf.matmul(tf.matmul(tf.transpose(X), tf.gather(t_slices, i), X)))
-            #    ]
+            X_t = tf.transpose(X)
+            t_slice = tf.gather(t_slices, i)
+            with tf.control_dependencies([t_slice]):
+                m1 = tf.matmul(t_slice, X)
+            with tf.control_dependencies([t_slice, m1, X_t]):
+                m2 = tf.matmul(X_t, m1)
+            return [tf.add(i, 1), ta.write(i, m2)]
 
         _, ta = tf.while_loop(cond_t, body_t, [0, ta], parallel_iterations=1)
         zt = ta.concat()
