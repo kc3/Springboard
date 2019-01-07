@@ -125,7 +125,7 @@ class RNTN(BaseEstimator, ClassifierMixin):
         self._get_vocabulary()
 
         # Initialize a session to run tensorflow operations on a new graph.
-        with tf.Graph().as_default(), tf.Session(config=tf.ConfigProto(log_device_placement=True)) as session:
+        with tf.Graph().as_default(), tf.Session() as session:
 
             # Build placeholders for storing tree node information used to create computational graph.
             self._build_model_placeholders()
@@ -362,21 +362,9 @@ class RNTN(BaseEstimator, ClassifierMixin):
         zs = tf.add(tf.matmul(W, X), b)
 
         # zt = X' * T * X
-        t_slices = tf.unstack(T, axis=2)
-        n = tf.shape(T)[2]
-        ta = tf.TensorArray(tf.float32, size=n, colocate_with_first_write_call=True)
-
-        def cond_t(i, ta):
-            return tf.less(i, n)
-
-        def body_t(i, ta):
-            t_slice = tf.gather(t_slices, i)
-            m1 = tf.matmul(t_slice, X)
-            m2 = tf.matmul(X, m1, transpose_a=True)
-            return [tf.add(i, 1), ta.write(i, m2)]
-
-        _, ta = tf.while_loop(cond_t, body_t, [0, ta], parallel_iterations=1)
-        zt = ta.concat()
+        m1 = tf.tensordot(T, X, [[1], [0]])
+        m2 = tf.tensordot(X, m1, [[0], [0]])
+        zt = tf.expand_dims(tf.squeeze(m2), axis=1)
 
         # a = zs + zt
         return tf.add(zs, zt)
