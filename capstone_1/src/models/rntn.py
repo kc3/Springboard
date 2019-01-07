@@ -125,7 +125,7 @@ class RNTN(BaseEstimator, ClassifierMixin):
         self._get_vocabulary()
 
         # Initialize a session to run tensorflow operations on a new graph.
-        with tf.Graph().as_default(), tf.Session() as session:
+        with tf.Graph().as_default(), tf.Session(config=tf.ConfigProto(log_device_placement=True)) as session:
 
             # Build placeholders for storing tree node information used to create computational graph.
             self._build_model_placeholders()
@@ -149,7 +149,7 @@ class RNTN(BaseEstimator, ClassifierMixin):
                 start_idx = 0
                 while start_idx < len(x):
                     end_idx = min(start_idx + self.batch_size, len(x))
-                    logging.debug('Processing trees at indices ({0}, {1})'.format(start_idx, end_idx))
+                    logging.info('Processing trees at indices ({0}, {1})'.format(start_idx, end_idx))
 
                     # Build feed dict
                     feed_dict = self._build_feed_dict(x[start_idx:end_idx])
@@ -161,15 +161,8 @@ class RNTN(BaseEstimator, ClassifierMixin):
                     n = tf.squeeze(tf.shape(labels)).eval(feed_dict)
                     logging.info('Feed Dict has {0} labels'.format(n))
 
-                    # Define a tensor array to store the logits (outputs from projection layer)
-                    logits = tf.TensorArray(tf.float32,
-                                            size=n,
-                                            dynamic_size=True,
-                                            clear_after_read=False,
-                                            infer_shape=False)
-
                     # Build batch graph
-                    logits = self._build_batch_graph(self.get_word, self._get_compose_func(), logits)
+                    logits = self._build_batch_graph(self.get_word, self._get_compose_func())
 
                     # Build loss graph
                     loss_tensor = self._build_loss_graph(labels, logits, self.regularization_rate)
@@ -177,7 +170,6 @@ class RNTN(BaseEstimator, ClassifierMixin):
                     # Loss
                     # Invoke the graph for loss function with this feed dict.
                     logging.info('Loss = {0}'.format(loss_tensor.eval(feed_dict)))
-                    #session.run(loss_tensor, feed_dict=feed_dict)
 
                     # Build optimizer graph
                     optimizer_tensor = self._build_optimizer_graph(self.training_rate, loss_tensor)
@@ -185,9 +177,6 @@ class RNTN(BaseEstimator, ClassifierMixin):
                     # Train
                     # Invoke the graph for optimizer this feed dict.
                     session.run(optimizer_tensor, feed_dict=feed_dict)
-
-                    # Close the tensor array
-                    logits.close()
 
                     start_idx = end_idx
 
@@ -381,12 +370,9 @@ class RNTN(BaseEstimator, ClassifierMixin):
             return tf.less(i, n)
 
         def body_t(i, ta):
-            X_t = tf.transpose(X)
             t_slice = tf.gather(t_slices, i)
-            with tf.control_dependencies([t_slice]):
-                m1 = tf.matmul(t_slice, X)
-            with tf.control_dependencies([t_slice, m1, X_t]):
-                m2 = tf.matmul(X_t, m1)
+            m1 = tf.matmul(t_slice, X)
+            m2 = tf.matmul(X, m1, transpose_a=True)
             return [tf.add(i, 1), ta.write(i, m2)]
 
         _, ta = tf.while_loop(cond_t, body_t, [0, ta], parallel_iterations=1)
@@ -431,7 +417,7 @@ class RNTN(BaseEstimator, ClassifierMixin):
         return compose_func_p
 
     @staticmethod
-    def _build_batch_graph(get_word_func, compose_func, tensors):
+    def _build_batch_graph(get_word_func, compose_func):
         """ Builds Batch graph for this training batch using tf.while_loop from feed_dict.
 
         This is the main method where both the Composition and Projection Layers are defined
@@ -447,8 +433,6 @@ class RNTN(BaseEstimator, ClassifierMixin):
             Function that will be evaluated to get word embedding.
         :param compose_func:
             Function that will be evaluated to compose two vectors.
-        :param tensors:
-            Array of logits that will be populated by this function.
         :return logits:
             logits: An array of tensors containing unscaled probabilities for sentiment labels.
         """
@@ -463,6 +447,13 @@ class RNTN(BaseEstimator, ClassifierMixin):
         # Get length of the tensor array
         # squeeze removes dimension of size 1
         n = tf.squeeze(tf.shape(is_leaf))
+
+        # Define a tensor array to store the logits (outputs from projection layer)
+        tensors = tf.TensorArray(tf.float32,
+                                 size=n,
+                                 dynamic_size=True,
+                                 clear_after_read=False,
+                                 infer_shape=False)
 
         # Define loop condition
         # node_idx < len(tensors)
