@@ -31,12 +31,12 @@ class RNTN(BaseEstimator, ClassifierMixin):
     """Recursive Tensor Neural Network Model. Conforms to Estimator interface of scikit-learn."""
 
     def __init__(self,
-                 embedding_size=10,
+                 embedding_size=30,
                  num_epochs=1,
-                 batch_size=100,
+                 batch_size=25,
                  compose_func='relu',
-                 training_rate=0.1,
-                 regularization_rate=0.1
+                 training_rate=0.01,
+                 regularization_rate=0.01
                  ):
 
         #
@@ -155,7 +155,10 @@ class RNTN(BaseEstimator, ClassifierMixin):
                     feed_dict = self._build_feed_dict(x[start_idx:end_idx])
 
                     # Get labels
+                    # stop_gradient stops backprop for labels
                     labels = tf.get_default_graph().get_tensor_by_name('Inputs/label:0')
+                    labels_encoded = tf.one_hot(labels, self.label_size_)
+                    labels_no_grad = tf.stop_gradient(labels_encoded)
 
                     # Get length of the tensor array
                     n = tf.squeeze(tf.shape(labels)).eval(feed_dict)
@@ -165,7 +168,7 @@ class RNTN(BaseEstimator, ClassifierMixin):
                     logits = self._build_batch_graph(self.get_word, self._get_compose_func())
 
                     # Build loss graph
-                    loss_tensor = self._build_loss_graph(labels, logits, self.regularization_rate)
+                    loss_tensor = self._build_loss_graph(labels_no_grad, logits, self.regularization_rate)
 
                     # Loss
                     # Invoke the graph for loss function with this feed dict.
@@ -367,7 +370,8 @@ class RNTN(BaseEstimator, ClassifierMixin):
         zt = tf.expand_dims(tf.squeeze(m2), axis=1)
 
         # a = zs + zt
-        return tf.add(zs, zt)
+        a = tf.add(zs, zt)
+        return a
 
     def compose_relu(self, X):
         """ Rectified Linear Unit Composition.
@@ -439,9 +443,7 @@ class RNTN(BaseEstimator, ClassifierMixin):
         # Define a tensor array to store the logits (outputs from projection layer)
         tensors = tf.TensorArray(tf.float32,
                                  size=n,
-                                 dynamic_size=True,
-                                 clear_after_read=False,
-                                 infer_shape=False)
+                                 clear_after_read=False)
 
         # Define loop condition
         # node_idx < len(tensors)
@@ -478,7 +480,8 @@ class RNTN(BaseEstimator, ClassifierMixin):
             U = tf.get_variable('U')
             bs = tf.get_variable('bs')
 
-        return tf.transpose(tf.matmul(tf.transpose(U), p) + bs)
+        output = tf.transpose(tf.matmul(tf.transpose(U), p) + bs)
+        return output
 
     @staticmethod
     def _build_loss_graph(labels, logits, regularization_rate):
@@ -495,9 +498,10 @@ class RNTN(BaseEstimator, ClassifierMixin):
         :return:
             Loss tensor for the whole network.
         """
+
         # Get Cross Entropy Loss
-        cross_entropy_loss = tf.reduce_sum(
-            tf.nn.sparse_softmax_cross_entropy_with_logits(labels=labels, logits=logits))
+        cross_entropy = tf.nn.softmax_cross_entropy_with_logits_v2(labels=labels, logits=logits)
+        cross_entropy_loss = tf.reduce_sum(cross_entropy)
 
         # Get Regularization Loss for weight terms excluding biases
         with tf.variable_scope('Composition', reuse=True):
@@ -514,7 +518,8 @@ class RNTN(BaseEstimator, ClassifierMixin):
             regularization_rate)
 
         # Return Total Loss
-        return tf.add(cross_entropy_loss, regularization_loss)
+        total_loss = tf.add(cross_entropy_loss, regularization_loss)
+        return total_loss
 
     @staticmethod
     def _build_optimizer_graph(learning_rate, loss_tensor):
@@ -564,6 +569,10 @@ class RNTN(BaseEstimator, ClassifierMixin):
             right_child_vals.extend(tree_dict['right_child'])
             label_vals.extend(tree_dict['label'])
             start_idx += len(tree_dict['is_leaf'])
+
+        # Check whether tensors are written before read.
+        assert np.all([left_child_vals[i] < i for i in range(len(left_child_vals))])
+        assert np.all([right_child_vals[i] < i for i in range(len(right_child_vals))])
 
         # Get Placeholders
         graph = tf.get_default_graph()
@@ -616,18 +625,33 @@ class RNTN(BaseEstimator, ClassifierMixin):
             nodes.insert(0, node)
 
         for i in range(len(nodes)):
-            nodes_dict[nodes[i]] = i + start_idx
-
-        start_idx += len(nodes)
+            nodes_dict[nodes[i]] = i
 
         # Create feed dict
         feed_dict = {
             'is_leaf': [node.isLeaf for node in nodes],
-            'word_index': [self.vocabulary_[node.word] if node.word in self.vocabulary_ else -1 for node in nodes],
-            'left_child': [nodes_dict[node.left] if not node.isLeaf else -1 for node in nodes],
-            'right_child': [nodes_dict[node.right] if not node.isLeaf else -1 for node in nodes],
+            'word_index': [self.vocabulary_[node.word.lower()]
+                           if node.word is not None and node.word.lower() in self.vocabulary_ else -1
+                           for node in nodes],
+            'left_child': [nodes_dict[node.left]+start_idx if not node.isLeaf else -1 for node in nodes],
+            'right_child': [nodes_dict[node.right]+start_idx if not node.isLeaf else -1 for node in nodes],
             'label': [node.label for node in nodes]
         }
+
+        # checks
+        for i in range(len(nodes)):
+            node = nodes[i]
+            assert feed_dict['is_leaf'][i] == node.isLeaf
+            if node.isLeaf:
+                assert feed_dict['left_child'][i] == -1
+                assert feed_dict['right_child'][i] == -1
+            else:
+                assert feed_dict['word_index'][i] == -1
+                assert start_idx <= feed_dict['left_child'][i] < start_idx + i, \
+                    'Left:{0}'.format(feed_dict['left_child'])
+                assert start_idx <= feed_dict['right_child'][i] < start_idx + i, \
+                    'Right:{0}'.format(feed_dict['right_child'])
+            assert 0 <= feed_dict['label'][i] <= 4
 
         return feed_dict
 

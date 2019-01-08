@@ -10,6 +10,7 @@ from src.models.rntn import RNTN
 from src.models.data_manager import DataManager
 import tensorflow as tf
 
+
 class TestRNTN(object):
 
     #def __init__(self):
@@ -19,13 +20,12 @@ class TestRNTN(object):
     # def test_rntn_estimator(self):
     #    check_estimator(train_model.RNTN)
 
-    def test_construction(self):
-        r = RNTN()
-        assert r is not None
+    #def test_construction(self):
+    #    r = RNTN()
+    #    assert r is not None
 
     def test_fit(self):
         data_mgr = DataManager()
-
         with tf.Session() as s:
             r = RNTN()
             x = data_mgr.x_train
