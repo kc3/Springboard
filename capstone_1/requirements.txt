@@ -10,6 +10,7 @@ bleach==3.0.2
 certifi==2018.11.29
 cffi==1.11.5
 chardet==3.0.4
+Click==7.0
 colorama==0.4.0
 cryptography==2.4.2
 decorator==4.3.0
@@ -17,6 +18,7 @@ docutils==0.14
 entrypoints==0.2.3
 filelock==3.0.10
 flake8==3.6.0
+Flask==1.0.2
 gast==0.2.0
 grpcio==1.16.1
 h5py==2.8.0
@@ -26,8 +28,10 @@ ipykernel==5.1.0
 ipython==7.2.0
 ipython-genutils==0.2.0
 ipywidgets==7.4.2
+itsdangerous==1.1.0
 jedi==0.13.1
 Jinja2==2.10
+joblib==0.13.0
 jsonschema==2.6.0
 jupyter==1.0.0
 jupyter-client==5.2.3

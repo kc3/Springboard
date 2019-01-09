@@ -7,12 +7,12 @@
 #
 
 from collections import OrderedDict
+import joblib
 import logging
 import os
 import numpy as np
-import random
 from sklearn.base import BaseEstimator, ClassifierMixin
-from sklearn.metrics import make_scorer
+from sklearn.metrics import make_scorer, accuracy_score
 # from sklearn.utils.multiclass import check_classification_targets
 # from sklearn.utils.validation import check_X_y, check_is_fitted, check_array
 from src.models.data_manager import DataManager
@@ -36,7 +36,8 @@ class RNTN(BaseEstimator, ClassifierMixin):
                  batch_size=25,
                  compose_func='relu',
                  training_rate=0.01,
-                 regularization_rate=0.01
+                 regularization_rate=0.01,
+                 model_name=None
                  ):
 
         #
@@ -60,6 +61,9 @@ class RNTN(BaseEstimator, ClassifierMixin):
 
         # Regularization Rate
         self.regularization_rate = regularization_rate
+
+        # Model Name
+        self.model_name = model_name
 
         logging.info('Model RNTN initialization complete.')
 
@@ -113,7 +117,8 @@ class RNTN(BaseEstimator, ClassifierMixin):
         # This is called here as parameters might be modified outside init using BaseEstimator set_params()
         # Parameters with trailing underscore are set in fit by convention.
         #
-        self.name_ = self._build_model_name()
+        if not self.model_name:
+            self.model_name = self._build_model_name(len(x))
 
         #
         # Checks needed for using check_estimator() test.
@@ -121,8 +126,9 @@ class RNTN(BaseEstimator, ClassifierMixin):
         # x, y = check_X_y(x, y)
         # check_classification_targets(y)
 
-        # Get Vocabulary for building word embeddings.
-        self._get_vocabulary()
+        # Build Vocabulary for word embeddings.
+        # This also saves generated vocabulary for predictions.
+        self._build_vocabulary(x)
 
         # Initialize a session to run tensorflow operations on a new graph.
         with tf.Graph().as_default(), tf.Session() as session:
@@ -137,13 +143,17 @@ class RNTN(BaseEstimator, ClassifierMixin):
             # Initialize all variables in this graph
             session.run(tf.global_variables_initializer())
 
+            # Metrics to capture
+            total_loss = 0.
+
             # Run the optimizer num_epoch times.
             # Each iteration is one full run through the train data set.
             for epoch in range(self.num_epochs):
 
+                logging.info('Epoch {0} out of {1} training started.'.format(epoch, self.num_epochs))
+
                 # Shuffle data set for every epoch
                 np.random.shuffle(x)
-                logging.debug('First tree in x:{0}'.format(x[0].text()))
 
                 # Train using batch_size samples at a time
                 start_idx = 0
@@ -172,7 +182,9 @@ class RNTN(BaseEstimator, ClassifierMixin):
 
                     # Loss
                     # Invoke the graph for loss function with this feed dict.
-                    logging.info('Loss = {0}'.format(loss_tensor.eval(feed_dict)))
+                    epoch_loss = loss_tensor.eval(feed_dict)
+                    total_loss += epoch_loss
+                    logging.info('Loss = {0}'.format(epoch_loss))
 
                     # Build optimizer graph
                     optimizer_tensor = self._build_optimizer_graph(self.training_rate, loss_tensor)
@@ -184,11 +196,13 @@ class RNTN(BaseEstimator, ClassifierMixin):
                     start_idx = end_idx
 
             # Save model after full run
+            # Fit will always overwrite any model
             saver = tf.train.Saver()
-            save_path = self._build_save_path()
+            save_path = self._get_model_save_path()
             saver.save(session, save_path)
 
-        logging.info('Model {0} Training Complete.'.format(self.name_))
+        logging.info('Total Loss: {0}'.format(total_loss))
+        logging.info('Model {0} Training Complete.'.format(self.model_name))
 
         # Return self to conform to interface spec.
         return self
@@ -204,13 +218,20 @@ class RNTN(BaseEstimator, ClassifierMixin):
 
         # Tests for check_estimator()
         # Check is fit had been called
-        # check_is_fitted(self, ['name_'])
+        # check_is_fitted(self, ['vocabulary_'])
 
         # Input validation
         # x = check_array(x)
 
-        logging.info('predict called.')
-        return [random.randint(0, 4) for _ in range(len(x))]
+        logging.info('Model RNTN predict() called on {0} testing samples.'.format(len(x)))
+
+        y_class_prob = self.predict_proba(x)
+
+        # Get maximum arg val for the logits.
+        y_pred = np.argmax(y_class_prob, axis=1)
+
+        logging.info('Model RNTN predict() completed.')
+        return y_pred
 
     def predict_proba(self, x):
         """ Computes softmax log probabilities for given x.
@@ -221,17 +242,55 @@ class RNTN(BaseEstimator, ClassifierMixin):
         :return:
             Softmax probabilities of each class.
         """
-        logging.info('predict_proba called.')
-        return [np.exp(-1*random.randint(0, 4)) for _ in x]
 
-    def _loss(self, logits, labels):
-        """ Cost function computational graph invocation.
+        logging.info('Model RNTN predict_proba() called on {0} testing samples.'.format(len(x)))
 
-        :param logits:
-        :param labels:
-        :return:
-        """
-        return np.sum(np.abs([m - n for m, n in zip(logits, labels)]))
+        # Load vocabulary
+        self._load_vocabulary()
+
+        # Initialize a session to run tensorflow operations on a new graph.
+        with tf.Graph().as_default(), tf.Session() as session:
+
+            # Create placeholders
+            self._build_model_placeholders()
+
+            # Build model graph
+            self.label_size_ = 5
+            self._build_model_graph_var(self.embedding_size, self.V_, self.label_size_)
+
+            # Initialize all variables in this graph
+            session.run(tf.global_variables_initializer())
+
+            # Load model
+            saver = tf.train.Saver()
+            save_path = self._get_model_save_path()
+            saver.restore(session, save_path)
+            logging.info('Saved model {0} loaded from disk.'.format(save_path))
+
+            # Build feed dict
+            feed_dict = self._build_feed_dict(x)
+
+            # Build logit functions
+            # Get labels
+            labels = tf.get_default_graph().get_tensor_by_name('Inputs/label:0')
+            is_root = tf.get_default_graph().get_tensor_by_name('Inputs/is_root:0')
+
+            # Get length of the tensor array
+            n = tf.squeeze(tf.shape(labels)).eval(feed_dict)
+            logging.info('Feed Dict has {0} labels'.format(n))
+
+            # Build batch graph
+            logits = self._build_batch_graph(self.get_word, self._get_compose_func())
+            root_logits = tf.gather(logits, tf.where(is_root))
+
+            # Get softmax probabilities for the tensors.
+            y = tf.squeeze(tf.nn.softmax(root_logits))
+
+            # Evaluate arg vals
+            y_prob = y.eval(feed_dict)
+
+        logging.info('Model RNTN predict_proba() returned.')
+        return y_prob
 
     def loss(self):
         """ Default loss function for this estimator.
@@ -239,7 +298,21 @@ class RNTN(BaseEstimator, ClassifierMixin):
         :return:
             A loss function used by GridSearchCV to score the models.
         """
-        return make_scorer(self._loss, greater_is_better=False, needs_proba=True)
+        #return make_scorer(self._loss, greater_is_better=False, needs_proba=True)
+        return make_scorer(accuracy_score)
+
+    def _loss(self, actuals, labels):
+        """ Cost function computational graph invocation.
+
+        :param actuals:
+            Actual values (ground truth)
+        :param labels:
+            Predicted values
+        :return:
+            Computed loss
+        """
+
+        return np.sum(np.abs([m - n for m, n in zip(actuals, labels)]))
 
     @staticmethod
     def _build_model_graph_var(embedding_size, vocabulary_size, label_size):
@@ -326,6 +399,9 @@ class RNTN(BaseEstimator, ClassifierMixin):
 
             # Int32 indicating label of the node
             _ = tf.placeholder(tf.int32, shape=None, name='label')
+
+            # Boolean indicating if the node is a root
+            _ = tf.placeholder(tf.bool, shape=None, name='is_root')
 
     # Function to get word embedding
     @staticmethod
@@ -426,7 +502,7 @@ class RNTN(BaseEstimator, ClassifierMixin):
         :param compose_func:
             Function that will be evaluated to compose two vectors.
         :return logits:
-            logits: An array of tensors containing unscaled probabilities for sentiment labels.
+            An array of tensors containing unscaled probabilities for all nodes.
         """
 
         # Get Placeholders
@@ -480,8 +556,8 @@ class RNTN(BaseEstimator, ClassifierMixin):
             U = tf.get_variable('U')
             bs = tf.get_variable('bs')
 
-        output = tf.transpose(tf.matmul(tf.transpose(U), p) + bs)
-        return output
+        logits = tf.transpose(tf.matmul(tf.transpose(U), p) + bs)
+        return logits
 
     @staticmethod
     def _build_loss_graph(labels, logits, regularization_rate):
@@ -557,6 +633,7 @@ class RNTN(BaseEstimator, ClassifierMixin):
         left_child_vals = []
         right_child_vals = []
         label_vals = []
+        is_root_vals = []
 
         start_idx = 0
 
@@ -568,6 +645,7 @@ class RNTN(BaseEstimator, ClassifierMixin):
             left_child_vals.extend(tree_dict['left_child'])
             right_child_vals.extend(tree_dict['right_child'])
             label_vals.extend(tree_dict['label'])
+            is_root_vals.extend(tree_dict['is_root'])
             start_idx += len(tree_dict['is_leaf'])
 
         # Check whether tensors are written before read.
@@ -581,6 +659,7 @@ class RNTN(BaseEstimator, ClassifierMixin):
         left_child = graph.get_tensor_by_name('Inputs/left_child:0')
         right_child = graph.get_tensor_by_name('Inputs/right_child:0')
         label = graph.get_tensor_by_name('Inputs/label:0')
+        is_root = graph.get_tensor_by_name('Inputs/is_root:0')
 
         # Create feed dict
         feed_dict = {
@@ -588,7 +667,8 @@ class RNTN(BaseEstimator, ClassifierMixin):
             word_index: word_index_vals,
             left_child: left_child_vals,
             right_child: right_child_vals,
-            label: label_vals
+            label: label_vals,
+            is_root: is_root_vals
         }
 
         return feed_dict
@@ -630,12 +710,11 @@ class RNTN(BaseEstimator, ClassifierMixin):
         # Create feed dict
         feed_dict = {
             'is_leaf': [node.isLeaf for node in nodes],
-            'word_index': [self.vocabulary_[node.word.lower()]
-                           if node.word is not None and node.word.lower() in self.vocabulary_ else -1
-                           for node in nodes],
+            'word_index': [self._get_word_index(node.word) for node in nodes],
             'left_child': [nodes_dict[node.left]+start_idx if not node.isLeaf else -1 for node in nodes],
             'right_child': [nodes_dict[node.right]+start_idx if not node.isLeaf else -1 for node in nodes],
-            'label': [node.label for node in nodes]
+            'label': [node.label for node in nodes],
+            'is_root': [True if i == len(nodes)-1 else False for i in range(len(nodes))]
         }
 
         # checks
@@ -652,41 +731,120 @@ class RNTN(BaseEstimator, ClassifierMixin):
                 assert start_idx <= feed_dict['right_child'][i] < start_idx + i, \
                     'Right:{0}'.format(feed_dict['right_child'])
             assert 0 <= feed_dict['label'][i] <= 4
+            if i == len(nodes) - 1:
+                assert feed_dict['is_root'][i]
+            else:
+                assert not feed_dict['is_root'][i]
 
         return feed_dict
 
-    def _build_model_name(self):
+    def _build_model_name(self, num_samples):
         """ Builds model name for persistence and retrieval based on model parameters.
 
+        :param num_samples:
+            Number of samples used for training.
         :return:
             String containing model name.
         """
 
         params = self.get_params()
         params_string = '_'.join(['{0}'.format(value) for _, value in params.items()])
-        return 'RNTN_{0}'.format(params_string)
+        return 'RNTN_{0}_{1}'.format(params_string, num_samples)
 
-    def _get_vocabulary(self):
-        """ Gets Vocabulary from data_manager.
-        Sets internal variables:
-            - vocabulary_ (needed for word->index mapping)
-            - V_ (vocabulary size)
+    def _get_save_dir(self):
+        """ Checks for save directory and builds it if necessary.
+
+        :return:
+             A string containing save directory path
+        """
+        save_dir = DataManager().def_models_path + '/' + self.model_name
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
+        return save_dir
+
+    def _get_model_save_path(self):
+        """ Builds save path for the model.
+
+        :return:
+            A string containing model save path.
+        """
+        return '{0}/{1}.ckpt'.format(self._get_save_dir(), self.model_name)
+
+    def _get_vocabulary_save_path(self):
+        """ Builds save path for the vocabulary for the model.
+
+        :return:
+            A string containing model save path.
+        """
+        return '{0}/vocabulary.pkl'.format(self._get_save_dir(), self.model_name)
+
+    def _build_vocabulary(self, trees):
+        """ Builds a dictionary of vocabulary words and persists it.
+
+        :param trees:
+            Collection of trees.
         :return:
             None.
         """
+        # Build a dictionary of words
+        self.vocabulary_ = {}
+        word_index = 0
 
-        # Get DataManager Instance to see the vocabulary
-        self.vocabulary_ = DataManager().countvectorizer.vocabulary_
+        # Parse trees and add to dict.
+        for i in range(len(trees)):
+            tree = trees[i]
+
+            # Add tree leaves recursively to the vocabulary
+            stack = [tree.root]
+            while stack:
+                node = stack.pop()
+                if node.isLeaf:
+                    self.vocabulary_[node.word] = word_index
+                    word_index += len(self.vocabulary_)
+                else:
+                    stack.append(node.right)
+                    stack.append(node.left)
+
+        logging.info('Built dictionary for model {0} of size {1}'.format(self.model_name, len(self.vocabulary_)))
+
+        # Save
+        save_path = self._get_vocabulary_save_path()
+        joblib.dump(self.vocabulary_, save_path, compress=9)
+        logging.info('Saved dictionary to {0}'.format(self.model_name))
+
         self.V_ = len(self.vocabulary_)
 
-    def _build_save_path(self):
-        """ Builds save path for the model
+    def _load_vocabulary(self):
+        """ Loads the vocabulary from the disk
 
         :return:
-            A string containing path.
+            None.
         """
+        save_path = self._get_vocabulary_save_path()
 
-        save_dir = DataManager().def_models_path + '/' + self.name_
-        if not os.path.exists(save_dir):
-            os.makedirs(save_dir)
-        return '{0}/{1}.ckpt'.format(save_dir, self.name_)
+        # Load the dictionary
+        if not os.path.exists(save_path):
+            raise IOError('Vocabulary not found ast {0}. Please train the model using fit() first.'.format(save_path))
+
+        self.vocabulary_ = joblib.load(save_path)
+        self.V_ = len(self.vocabulary_)
+        logging.info('Loaded dictionary from {0} of size {1}'.format(save_path, self.V_))
+
+    def _get_word_index(self, word):
+        """ Returns the word index for a given word.
+
+        :param word:
+            Word to search in existing vocabulary for.
+        :return:
+            Word index if it is present in vocabulary or -1 otherwise.
+        """
+        # Load vocabulary if necessary
+        if not hasattr(self, 'vocabulary_'):
+            self._load_vocabulary()
+
+        assert hasattr(self, 'vocabulary_')
+
+        if word is not None and word in self.vocabulary_:
+            return self.vocabulary_[word]
+
+        return -1
