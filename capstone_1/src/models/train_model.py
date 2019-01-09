@@ -35,7 +35,7 @@ def train_model(clf, params, score_func, x_train, y_train, x_dev, y_dev):
     return model
 
 #
-# Function to train all models
+# Function to train rntn
 #
 
 
@@ -44,7 +44,7 @@ def train_rntn():
     data_manager = DataManager()
 
     clf = RNTN()
-    params = {'batch_size': [10]}
+    params = {'batch_size': [25], 'num_epochs': [3], 'training_rate': [0.0001]}
     score_func = clf.loss()
     x_train = data_manager.x_train
     y_train = [random.randint(0, 4) for _ in range(len(x_train))]
@@ -58,4 +58,8 @@ def train_rntn():
     x_test = data_manager.x_test
     y_test = np.array([random.randint(0, 4) for _ in range(len(x_test))]).reshape(-1, 1)
     score = cv.score(x_test, y_test)
-    print("Model Loss: {0}".format(score))
+    print("Model Accuracy: {0}".format(score))
+
+# Call train on run
+if __name__ == '__main__':
+    train_rntn()
