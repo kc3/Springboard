@@ -44,10 +44,14 @@ Project Organization
     │   ├── models         <- Scripts to train models and then use trained models to make
     │   │   │                 predictions
     │   │   ├── predict_model.py
+    │   │   └── rntn.py    <- Recursive Neural Tensor Network
     │   │   └── train_model.py
     │   │
-    │   └── visualization  <- Scripts to create exploratory and results oriented visualizations
-    │       └── visualize.py
+    │   ├── visualization  <- Scripts to create exploratory and results oriented visualizations
+    │   │   └── visualize.py
+    │   │
+    │   └── webapp         <- Scripts to host webapp for project demo
+    │       └── webapp.py
     │
     └── tox.ini            <- tox file with settings for running tox; see tox.testrun.org
 
