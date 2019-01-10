@@ -7,6 +7,7 @@
 #
 
 from collections import OrderedDict
+from datetime import datetime
 import joblib
 import logging
 import os
@@ -22,7 +23,8 @@ import tensorflow as tf
 # Configure logging
 #
 
-logging.basicConfig(level=logging.INFO,
+logging.basicConfig(filename='./logs/run-{0}.log'.format(datetime.now().strftime('%Y%m%d-%H%M%S')),
+                    level=logging.INFO,
                     format='%(asctime)s-%(process)d-%(name)s-%(levelname)s-%(message)s',
                     datefmt='%Y-%m-%d %H:%M:%S')
 
@@ -126,34 +128,42 @@ class RNTN(BaseEstimator, ClassifierMixin):
         # x, y = check_X_y(x, y)
         # check_classification_targets(y)
 
+        # Set label size
+        self.label_size_ = 5
+
         # Build Vocabulary for word embeddings.
         # This also saves generated vocabulary for predictions.
         self._build_vocabulary(x)
 
-        # Initialize a session to run tensorflow operations on a new graph.
-        with tf.Graph().as_default(), tf.Session() as session:
+        # Run the optimizer num_epoch times.
+        # Each iteration is one full run through the train data set.
+        for epoch in range(self.num_epochs):
+            logging.info('Epoch {0} out of {1} training started.'.format(epoch, self.num_epochs))
 
-            # Build placeholders for storing tree node information used to create computational graph.
-            self._build_model_placeholders()
-
-            # Build model graph
-            self.label_size_ = 5
-            self._build_model_graph_var(self.embedding_size, self.V_, self.label_size_)
-
-            # Initialize all variables in this graph
-            session.run(tf.global_variables_initializer())
+            # Shuffle data set for every epoch
+            np.random.shuffle(x)
 
             # Metrics to capture
             total_loss = 0.
 
-            # Run the optimizer num_epoch times.
-            # Each iteration is one full run through the train data set.
-            for epoch in range(self.num_epochs):
+            # Initialize a session to run tensorflow operations on a new graph.
+            with tf.Graph().as_default(), tf.Session() as session:
 
-                logging.info('Epoch {0} out of {1} training started.'.format(epoch, self.num_epochs))
+                # Build placeholders for storing tree node information used to create computational graph.
+                self._build_model_placeholders()
 
-                # Shuffle data set for every epoch
-                np.random.shuffle(x)
+                # Build model graph
+                self._build_model_graph_var(self.embedding_size, self.V_, self.label_size_)
+
+                # Initialize all variables in this graph
+                session.run(tf.global_variables_initializer())
+
+                # Load model
+                if epoch > 0:
+                    saver = tf.train.Saver()
+                    save_path = self._get_model_save_path()
+                    saver.restore(session, save_path)
+                    logging.info('Saved model {0} loaded from disk.'.format(save_path))
 
                 # Train using batch_size samples at a time
                 start_idx = 0
@@ -195,13 +205,14 @@ class RNTN(BaseEstimator, ClassifierMixin):
 
                     start_idx = end_idx
 
-            # Save model after full run
-            # Fit will always overwrite any model
-            saver = tf.train.Saver()
-            save_path = self._get_model_save_path()
-            saver.save(session, save_path)
+                # Save model after full run
+                # Fit will always overwrite any model
+                saver = tf.train.Saver()
+                save_path = self._get_model_save_path()
+                saver.save(session, save_path)
 
-        logging.info('Total Loss: {0}'.format(total_loss))
+            logging.info('Total Loss: {0} for epoch{1}'.format(total_loss, epoch))
+
         logging.info('Model {0} Training Complete.'.format(self.model_name))
 
         # Return self to conform to interface spec.
