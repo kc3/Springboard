@@ -810,8 +810,9 @@ class RNTN(BaseEstimator, ClassifierMixin):
             while stack:
                 node = stack.pop()
                 if node.isLeaf:
-                    self.vocabulary_[node.word] = word_index
-                    word_index += len(self.vocabulary_)
+                    if node.word not in self.vocabulary_:
+                        self.vocabulary_[node.word] = word_index
+                        word_index = len(self.vocabulary_)
                 else:
                     stack.append(node.right)
                     stack.append(node.left)
