@@ -1,7 +1,10 @@
 # -*- coding: utf-8 -*-
 
 import os
+import sys
+sys.path.append(os.getcwd())
 
+from src.models.predict_model import predict_model
 from flask import Flask, render_template, request
 
 
@@ -17,9 +20,11 @@ def create_app(config=None):
     @app.route("/", methods=['GET', 'POST'])
     def sentiment():
         if request.method == 'POST':
-            return render_template('sentiment.html', text=request.form['text'])
+            review_text = request.form['text']
+            label = predict_model(review_text)
+            return render_template('sentiment.html', text=review_text, label=label)
         else:
-            return render_template('sentiment.html', text=None)
+            return render_template('sentiment.html', text=None, label=None)
 
     return app
 

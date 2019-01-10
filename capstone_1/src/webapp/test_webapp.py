@@ -15,4 +15,3 @@ def test_sentiment(app):
     res = app.get("/")
     # print(dir(res), res.status_code)
     assert res.status_code == 200
-    assert b"Hello World" in res.data
