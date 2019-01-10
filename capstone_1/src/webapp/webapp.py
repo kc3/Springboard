@@ -2,7 +2,7 @@
 
 import os
 
-from flask import Flask
+from flask import Flask, render_template, request
 
 
 def create_app(config=None):
@@ -14,9 +14,12 @@ def create_app(config=None):
 
     # Definition of the routes. Put them into their own file. See also
     # Flask Blueprints: http://flask.pocoo.org/docs/latest/blueprints
-    @app.route("/")
-    def hello_world():
-        return "Hello World"
+    @app.route("/", methods=['GET', 'POST'])
+    def sentiment():
+        if request.method == 'POST':
+            return render_template('sentiment.html', text=request.form['text'])
+        else:
+            return render_template('sentiment.html', text=None)
 
     return app
 

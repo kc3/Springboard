@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Sentiment Analysis Project.</title>
+</head>
+<body>
+{% if text %}
+    <h1>Please enter movie review text to analyze!</h1>
+    <form action="/" method="post">
+        Review:<br>
+        <input type="text" name="text">
+        <input type="submit">
+    </form>
+    <h3>You entered:</h3>
+    <h4><i>{{ text }}</i></h4>
+    <h3>Prediction:</h3>
+    <h3>Sentiment tree:</h3>
+{% else %}
+    <h1>Please enter movie review text to analyze!</h1>
+    <form action="/" method="post">
+        Review:<br>
+        <input type="text" name="text">
+        <input type="submit">
+    </form>
+{% endif %}
+</body>
+</html>
