@@ -146,30 +146,30 @@ class RNTN(BaseEstimator, ClassifierMixin):
             # Metrics to capture
             total_loss = 0.
 
-            # Initialize a session to run tensorflow operations on a new graph.
-            with tf.Graph().as_default(), tf.Session() as session:
+            # Train using batch_size samples at a time
+            start_idx = 0
+            while start_idx < len(x):
+                end_idx = min(start_idx + self.batch_size, len(x))
+                logging.info('Processing trees at indices ({0}, {1})'.format(start_idx, end_idx))
 
-                # Build placeholders for storing tree node information used to create computational graph.
-                self._build_model_placeholders()
+                # Initialize a session to run tensorflow operations on a new graph.
+                with tf.Graph().as_default(), tf.Session() as session:
 
-                # Build model graph
-                self._build_model_graph_var(self.embedding_size, self.V_, self.label_size_)
+                    # Build placeholders for storing tree node information used to create computational graph.
+                    self._build_model_placeholders()
 
-                # Initialize all variables in this graph
-                session.run(tf.global_variables_initializer())
+                    # Build model graph
+                    self._build_model_graph_var(self.embedding_size, self.V_, self.label_size_)
 
-                # Load model
-                if epoch > 0:
-                    saver = tf.train.Saver()
-                    save_path = self._get_model_save_path()
-                    saver.restore(session, save_path)
-                    logging.info('Saved model {0} loaded from disk.'.format(save_path))
+                    # Initialize all variables in this graph
+                    session.run(tf.global_variables_initializer())
 
-                # Train using batch_size samples at a time
-                start_idx = 0
-                while start_idx < len(x):
-                    end_idx = min(start_idx + self.batch_size, len(x))
-                    logging.info('Processing trees at indices ({0}, {1})'.format(start_idx, end_idx))
+                    # Load model
+                    if epoch > 0:
+                        saver = tf.train.Saver()
+                        save_path = self._get_model_save_path()
+                        saver.restore(session, save_path)
+                        logging.info('Saved model {0} loaded from disk.'.format(save_path))
 
                     # Build feed dict
                     feed_dict = self._build_feed_dict(x[start_idx:end_idx])
@@ -203,13 +203,13 @@ class RNTN(BaseEstimator, ClassifierMixin):
                     # Invoke the graph for optimizer this feed dict.
                     session.run(optimizer_tensor, feed_dict=feed_dict)
 
-                    start_idx = end_idx
+                    # Save model after full run
+                    # Fit will always overwrite any model
+                    saver = tf.train.Saver()
+                    save_path = self._get_model_save_path()
+                    saver.save(session, save_path)
 
-                # Save model after full run
-                # Fit will always overwrite any model
-                saver = tf.train.Saver()
-                save_path = self._get_model_save_path()
-                saver.save(session, save_path)
+                start_idx = end_idx
 
             logging.info('Total Loss: {0} for epoch{1}'.format(total_loss, epoch))
 
