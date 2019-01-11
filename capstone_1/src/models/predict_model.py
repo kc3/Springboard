@@ -7,6 +7,7 @@
 #
 
 import logging
+import numpy as np
 from nltk.parse.corenlp import CoreNLPParser, Tree as nltk_tree
 from src.models.rntn import RNTN
 from src.features.tree import Tree as features_tree
@@ -30,10 +31,11 @@ def predict_model(x, model_name='test'):
     logging.info('Tree structure encoded as {0}'.format(tree_txt))
 
     tree = features_tree(tree_txt)
+    trees = np.asarray([tree]).reshape(-1, 1)
 
     # Get predictions
     r = RNTN(model_name=model_name, num_epochs=2)
-    y_pred = r.predict([tree])
+    y_pred = r.predict(trees)
 
     return y_pred
 

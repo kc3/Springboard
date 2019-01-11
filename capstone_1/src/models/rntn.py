@@ -13,7 +13,8 @@ import logging
 import os
 import numpy as np
 from sklearn.base import BaseEstimator, ClassifierMixin
-from sklearn.metrics import make_scorer, accuracy_score
+from sklearn.metrics import make_scorer, log_loss
+from sklearn.preprocessing import OneHotEncoder
 # from sklearn.utils.multiclass import check_classification_targets
 # from sklearn.utils.validation import check_X_y, check_is_fitted, check_array
 from src.models.data_manager import DataManager
@@ -39,6 +40,7 @@ class RNTN(BaseEstimator, ClassifierMixin):
                  compose_func='relu',
                  training_rate=0.01,
                  regularization_rate=0.01,
+                 label_size = 5,
                  model_name=None
                  ):
 
@@ -63,6 +65,9 @@ class RNTN(BaseEstimator, ClassifierMixin):
 
         # Regularization Rate
         self.regularization_rate = regularization_rate
+
+        # Label size
+        self.label_size = label_size
 
         # Model Name
         self.model_name = model_name
@@ -105,14 +110,15 @@ class RNTN(BaseEstimator, ClassifierMixin):
             bs: Bias term for Projection Step of shape [label_size, 1]
 
         :param x:
-            Parsed Trees (training samples)
+            Parsed Trees (training samples) in a 2D ndarray of dim (num_samples, 1).
         :param y:
             Labels provided for supervised training. In our case labels are already present on tree nodes.
         :return:
             self (expected by BaseEstimator interface)
         """
 
-        logging.info('Model RNTN fit() called on {0} training samples.'.format(len(x)))
+        logging.info('Model RNTN fit() called on {0} training samples.'.format(x.shape[0]))
+        x = x[:, 0]
 
         #
         # Set model name based on parameters
@@ -127,9 +133,6 @@ class RNTN(BaseEstimator, ClassifierMixin):
         # Check that X and y have correct shape
         # x, y = check_X_y(x, y)
         # check_classification_targets(y)
-
-        # Set label size
-        self.label_size_ = 5
 
         # Build Vocabulary for word embeddings.
         # This also saves generated vocabulary for predictions.
@@ -159,7 +162,7 @@ class RNTN(BaseEstimator, ClassifierMixin):
                     self._build_model_placeholders()
 
                     # Build model graph
-                    self._build_model_graph_var(self.embedding_size, self.V_, self.label_size_)
+                    self._build_model_graph_var(self.embedding_size, self.V_, self.label_size)
 
                     # Initialize all variables in this graph
                     session.run(tf.global_variables_initializer())
@@ -177,7 +180,7 @@ class RNTN(BaseEstimator, ClassifierMixin):
                     # Get labels
                     # stop_gradient stops backprop for labels
                     labels = tf.get_default_graph().get_tensor_by_name('Inputs/label:0')
-                    labels_encoded = tf.one_hot(labels, self.label_size_)
+                    labels_encoded = tf.one_hot(labels, self.label_size)
                     labels_no_grad = tf.stop_gradient(labels_encoded)
 
                     # Get length of the tensor array
@@ -194,7 +197,7 @@ class RNTN(BaseEstimator, ClassifierMixin):
                     # Invoke the graph for loss function with this feed dict.
                     epoch_loss = loss_tensor.eval(feed_dict)
                     total_loss += epoch_loss
-                    logging.info('Loss = {0}'.format(epoch_loss))
+                    logging.info('Loss after optimization = {0}'.format(epoch_loss))
 
                     # Build optimizer graph
                     optimizer_tensor = self._build_optimizer_graph(self.training_rate, loss_tensor)
@@ -211,7 +214,7 @@ class RNTN(BaseEstimator, ClassifierMixin):
 
                 start_idx = end_idx
 
-            logging.info('Total Loss: {0} for epoch{1}'.format(total_loss, epoch))
+            logging.info('Total Loss: {0} for epoch {1}'.format(total_loss, epoch))
 
         logging.info('Model {0} Training Complete.'.format(self.model_name))
 
@@ -249,12 +252,13 @@ class RNTN(BaseEstimator, ClassifierMixin):
         Scikit-learn will call this while using self.loss.
 
         :param x:
-            An array where each element is a tree.
+            An 2d ndarray where each element is a tree.
         :return:
             Softmax probabilities of each class.
         """
 
-        logging.info('Model RNTN predict_proba() called on {0} testing samples.'.format(len(x)))
+        logging.info('Model RNTN predict_proba() called on {0} testing samples.'.format(x.shape[0]))
+        x = x[:, 0]
 
         # Load vocabulary
         self._load_vocabulary()
@@ -266,8 +270,7 @@ class RNTN(BaseEstimator, ClassifierMixin):
             self._build_model_placeholders()
 
             # Build model graph
-            self.label_size_ = 5
-            self._build_model_graph_var(self.embedding_size, self.V_, self.label_size_)
+            self._build_model_graph_var(self.embedding_size, self.V_, self.label_size)
 
             # Initialize all variables in this graph
             session.run(tf.global_variables_initializer())
@@ -309,21 +312,25 @@ class RNTN(BaseEstimator, ClassifierMixin):
         :return:
             A loss function used by GridSearchCV to score the models.
         """
-        #return make_scorer(self._loss, greater_is_better=False, needs_proba=True)
-        return make_scorer(accuracy_score)
+        return make_scorer(self._loss, greater_is_better=False, needs_proba=True)
 
-    def _loss(self, actuals, labels):
+    def _loss(self, actuals, proba):
         """ Cost function computational graph invocation.
 
         :param actuals:
             Actual values (ground truth)
-        :param labels:
-            Predicted values
+        :param proba:
+            Softmax probabilities returned by predict_proba
         :return:
             Computed loss
         """
+        encoder = OneHotEncoder(categories=[list(range(self.label_size))], dtype=np.int32)
+        actuals_as_x = np.asarray(actuals).reshape(-1, 1)
+        labels = encoder.fit_transform(actuals_as_x)
+        loss_val = log_loss(actuals, proba, normalize=False, labels=labels)
+        logging.info('Model RNTN _loss() returned {0}.'.format(loss_val))
 
-        return np.sum(np.abs([m - n for m, n in zip(actuals, labels)]))
+        return loss_val
 
     @staticmethod
     def _build_model_graph_var(embedding_size, vocabulary_size, label_size):
@@ -426,11 +433,12 @@ class RNTN(BaseEstimator, ClassifierMixin):
         """
         with tf.variable_scope('Embeddings', reuse=True):
             L = tf.get_variable('L')
-            word = tf.cond(tf.less(word_idx, 0),
-                           lambda: tf.random_uniform(tf.gather(L, 0, axis=1).shape, -0.0001, maxval=0.0001),
-                           lambda: tf.gather(L, word_idx, axis=1))
-            word_col = tf.expand_dims(word, axis=1)
-            return word_col
+
+        word = tf.cond(tf.less(word_idx, 0),
+                       lambda: tf.random_uniform(tf.gather(L, 0, axis=1).shape, -0.0001, maxval=0.0001),
+                       lambda: tf.gather(L, word_idx, axis=1))
+        word_col = tf.expand_dims(word, axis=1)
+        return word_col
 
     # Function to build composition function for a single non leaf node
     @staticmethod
@@ -594,12 +602,12 @@ class RNTN(BaseEstimator, ClassifierMixin):
         with tf.variable_scope('Composition', reuse=True):
             W = tf.get_variable('W')
             T = tf.get_variable('T')
-            regularization_composition_loss = tf.nn.l2_loss(W) + tf.nn.l2_loss(T)
 
         with tf.variable_scope('Projection', reuse=True):
             U = tf.get_variable('U')
-            regularization_projection_loss = tf.nn.l2_loss(U)
 
+        regularization_composition_loss = tf.nn.l2_loss(W) + tf.nn.l2_loss(T)
+        regularization_projection_loss = tf.nn.l2_loss(U)
         regularization_loss = tf.multiply(
             tf.add(regularization_composition_loss, regularization_projection_loss),
             regularization_rate)
