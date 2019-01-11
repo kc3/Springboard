@@ -239,7 +239,7 @@ class RNTN(BaseEstimator, ClassifierMixin):
         y_class_prob = self.predict_proba(x)
 
         # Get maximum arg val for the logits.
-        y_pred = np.argmax(y_class_prob, axis=1)
+        y_pred = np.argmax(y_class_prob, axis=-1)
 
         logging.info('Model RNTN predict() completed.')
         return y_pred

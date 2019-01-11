@@ -19,8 +19,8 @@ class TestRNTN(object):
     #    self.data_mgr = DataManager()
 
     # This test is failing type checks due to tree data structure. Enable once fixed.
-    # def test_rntn_estimator(self):
-    #    check_estimator(train_model.RNTN)
+    #def test_rntn_estimator(self):
+    #   check_estimator(train_model.RNTN)
 
     def test_construction(self):
        r = RNTN(model_name='test')
@@ -28,44 +28,39 @@ class TestRNTN(object):
 
     def test_fit(self):
         data_mgr = DataManager()
-        with tf.Session() as s:
-            r = RNTN(model_name='test', num_epochs=2)
-            x = data_mgr.x_train[0:100]
-            r.fit(x, None)
+        x = data_mgr.x_train[0:100]
+        r = RNTN(model_name='test', num_epochs=2)
+        r.fit(x, None)
 
     def test_predict(self):
         data_mgr = DataManager()
-        with tf.Session() as s:
-            r = RNTN(model_name='test')
-            x = data_mgr.x_test[0:10]
-            y_pred = r.predict(x)
-            print(y_pred)
-            assert y_pred.shape == (10,)
+        r = RNTN(model_name='test')
+        x = data_mgr.x_test[0:10]
+        y_pred = r.predict(x)
+        assert y_pred.shape == (10,)
+        print(y_pred)
 
     def test_predict_proba(self):
         data_mgr = DataManager()
-        with tf.Session() as s:
-            r = RNTN(model_name='test')
-            x = data_mgr.x_test[0:10]
-            y_pred = r.predict_proba(x)
-            print(y_pred)
-            assert y_pred.shape == (10, 5)
+        r = RNTN(model_name='test')
+        x = data_mgr.x_test[0:10]
+        y_pred = r.predict_proba(x)
+        assert y_pred.shape == (10, 5)
+        print(y_pred)
 
     def test_loss(self):
         y_pred = [random.randint(0, 4) for _ in range(10)]
         y_actual = [random.randint(0, 4) for _ in range(10)]
-
-        with tf.Session() as s:
-            r = RNTN(model_name='test')
-            loss = r._loss(y_pred, y_actual)
-            print(loss)
-            assert np.isfinite(loss)
+        r = RNTN(model_name='test')
+        loss = r._loss(y_pred, y_actual)
+        assert np.isfinite(loss)
+        print(loss)
 
     def test_word(self):
         data_mgr = DataManager()
 
         with tf.Session() as s:
-            r = RNTN(model_name='test')
+            r = RNTN(model_name='word-test')
             x = data_mgr.x_train
             r._build_vocabulary(x)
             r.label_size_ = 5
@@ -80,7 +75,7 @@ class TestRNTN(object):
 
         with tf.Session() as s:
             s.run(tf.global_variables_initializer())
-            r = RNTN(model_name='test')
+            r = RNTN(model_name='word-test')
             x = data_mgr.x_train
             r._build_vocabulary(x)
             r.label_size_ = 5
