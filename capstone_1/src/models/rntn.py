@@ -34,13 +34,13 @@ class RNTN(BaseEstimator, ClassifierMixin):
     """Recursive Tensor Neural Network Model. Conforms to Estimator interface of scikit-learn."""
 
     def __init__(self,
-                 embedding_size=30,
+                 embedding_size=35,
                  num_epochs=1,
                  batch_size=25,
                  compose_func='relu',
                  training_rate=0.01,
                  regularization_rate=0.01,
-                 label_size = 5,
+                 label_size=5,
                  model_name=None
                  ):
 
@@ -112,7 +112,7 @@ class RNTN(BaseEstimator, ClassifierMixin):
         :param x:
             Parsed Trees (training samples) in a 2D ndarray of dim (num_samples, 1).
         :param y:
-            Labels provided for supervised training. In our case labels are already present on tree nodes.
+            Labels provided for supervised training.
         :return:
             self (expected by BaseEstimator interface)
         """
@@ -143,11 +143,10 @@ class RNTN(BaseEstimator, ClassifierMixin):
         for epoch in range(self.num_epochs):
             logging.info('Epoch {0} out of {1} training started.'.format(epoch, self.num_epochs))
 
+            total_loss = 0.
+
             # Shuffle data set for every epoch
             np.random.shuffle(x)
-
-            # Metrics to capture
-            total_loss = 0.
 
             # Train using batch_size samples at a time
             start_idx = 0
@@ -161,8 +160,11 @@ class RNTN(BaseEstimator, ClassifierMixin):
                     # Build placeholders for storing tree node information used to create computational graph.
                     self._build_model_placeholders()
 
-                    # Build model graph
+                    # Build model graph variables
                     self._build_model_graph_var(self.embedding_size, self.V_, self.label_size)
+
+                    # Build logging variables
+                    self._build_model_logging_var()
 
                     # Initialize all variables in this graph
                     session.run(tf.global_variables_initializer())
@@ -196,15 +198,25 @@ class RNTN(BaseEstimator, ClassifierMixin):
                     # Loss
                     # Invoke the graph for loss function with this feed dict.
                     epoch_loss = loss_tensor.eval(feed_dict)
+                    logging.info('Training Loss after optimization = {0}'.format(epoch_loss))
+
+                    train_loss_val = tf.get_default_graph().get_tensor_by_name('Logging/train_loss_val:0')
+                    if start_idx == 0:
+                        # Reset total loss for start of every epoch
+                        train_loss_val = tf.assign(train_loss_val, loss_tensor)
+                    else:
+                        # Update total loss
+                        train_loss_val = tf.assign_add(train_loss_val, loss_tensor)
+
                     total_loss += epoch_loss
-                    logging.info('Loss after optimization = {0}'.format(epoch_loss))
+                    logging.info('Updated total training loss: {0}'.format(train_loss_val.eval(feed_dict)))
 
                     # Build optimizer graph
                     optimizer_tensor = self._build_optimizer_graph(self.training_rate, loss_tensor)
 
                     # Train
                     # Invoke the graph for optimizer this feed dict.
-                    session.run(optimizer_tensor, feed_dict=feed_dict)
+                    session.run([optimizer_tensor], feed_dict=feed_dict)
 
                     # Save model after full run
                     # Fit will always overwrite any model
@@ -214,7 +226,10 @@ class RNTN(BaseEstimator, ClassifierMixin):
 
                 start_idx = end_idx
 
-            logging.info('Total Loss: {0} for epoch {1}'.format(total_loss, epoch))
+            logging.info('Total Training Loss: {0} for epoch {1}'.format(total_loss, epoch))
+
+            # Log variables to tensorboard
+            self._record_training_summary(epoch)
 
         logging.info('Model {0} Training Complete.'.format(self.model_name))
 
@@ -271,6 +286,9 @@ class RNTN(BaseEstimator, ClassifierMixin):
 
             # Build model graph
             self._build_model_graph_var(self.embedding_size, self.V_, self.label_size)
+
+            # Build logging variables
+            self._build_model_logging_var()
 
             # Initialize all variables in this graph
             session.run(tf.global_variables_initializer())
@@ -420,6 +438,37 @@ class RNTN(BaseEstimator, ClassifierMixin):
 
             # Boolean indicating if the node is a root
             _ = tf.placeholder(tf.bool, shape=None, name='is_root')
+
+    @staticmethod
+    def _build_model_logging_var():
+        """ Builds model logging variables.
+
+        :return:
+            None.
+        """
+        # Build Logging variables.
+        with tf.variable_scope('Logging', reuse=tf.AUTO_REUSE):
+            train_loss_val = tf.get_variable(name='train_loss_val',
+                                             shape=(),
+                                             trainable=False,
+                                             initializer=tf.zeros_initializer)
+            train_accuracy_val = tf.get_variable(name='train_accuracy_val',
+                                                 shape=(),
+                                                 trainable=False,
+                                                 initializer=tf.zeros_initializer)
+
+            _ = tf.get_variable(name='test_loss',
+                                shape=(),
+                                trainable=False,
+                                initializer=tf.zeros_initializer)
+            _ = tf.get_variable(name='test_accuracy',
+                                shape=(),
+                                trainable=False,
+                                initializer=tf.zeros_initializer)
+
+        with tf.name_scope('Logging_Variables'):
+            _ = tf.summary.scalar('train_loss', train_loss_val)
+            _ = tf.summary.scalar('train_accuracy', train_accuracy_val)
 
     # Function to get word embedding
     @staticmethod
@@ -868,3 +917,76 @@ class RNTN(BaseEstimator, ClassifierMixin):
             return self.vocabulary_[word]
 
         return -1
+
+    def _record_training_summary(self, epoch):
+        """ Records training summary to logs.
+
+        :return:
+            None.
+        """
+
+        with tf.Graph().as_default(), tf.Session() as session:
+            self._load_model(session)
+
+            merge = tf.summary.merge_all()
+
+            # Create log file writer to record training progress.
+            # Logs can be viewed by running in cmd window: "tensorboard --logdir logs"
+            training_writer = tf.summary.FileWriter("./logs/{}/training".format(self.model_name), session.graph)
+
+            summary = session.run(merge)
+
+            # Write the current training status to the log files
+            training_writer.add_summary(summary, epoch)
+
+    def record_testing_summary(self):
+        """ Records training summary to logs.
+
+        :return:
+            None.
+        """
+
+        with tf.Graph().as_default(), tf.Session() as session:
+            self._load_model(session)
+
+            with tf.variable_scope('Logging', reuse=True):
+                test_loss = tf.get_variable('test_loss')
+                test_accuracy = tf.get_variable('test_accuracy')
+
+            merge = tf.summary.merge([test_loss, test_accuracy])
+
+            # Create log file writer to record training progress.
+            # Logs can be viewed by running in cmd window: "tensorboard --logdir logs"
+            testing_writer = tf.summary.FileWriter("./logs/{}/testing".format(self.model_name), session.graph)
+
+            summary = session.run([merge])
+
+            # Write the current training status to the log files
+            testing_writer.add_summary(summary)
+
+    def _load_model(self, session):
+        """ Loads model from disk into session variables
+
+        :param session:
+            valid session object.
+        :return:
+            None
+        """
+
+        # Create placeholders
+        self._build_model_placeholders()
+
+        # Build model graph
+        self._build_model_graph_var(self.embedding_size, self.V_, self.label_size)
+
+        # Build logging variables
+        self._build_model_logging_var()
+
+        # Initialize all variables in this graph
+        session.run(tf.global_variables_initializer())
+
+        # Load model
+        saver = tf.train.Saver()
+        save_path = self._get_model_save_path()
+        saver.restore(session, save_path)
+        logging.info('Saved model {0} loaded from disk.'.format(save_path))

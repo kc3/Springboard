@@ -40,7 +40,7 @@ class TestRNTN(object):
     def test_fit(self):
         data_mgr = DataManager()
         x = np.asarray(data_mgr.x_train[0:100]).reshape(-1, 1)
-        r = RNTN(model_name='test', num_epochs=2)
+        r = RNTN(model_name='test')
         r.fit(x, None)
 
     def test_predict(self):
