@@ -35,13 +35,20 @@ def predict_model(x, model_name='test'):
 
     # Get predictions
     r = RNTN(model_name=model_name, num_epochs=2)
-    y_pred = r.predict(trees)
+    y_pred = r.predict_proba_full_tree(trees)
+    y = np.argmax(y_pred[-1])
 
-    return y_pred
+    return y
 
 
 def convert_text_tree(sentence):
+    """ Converts a given sentence into a sentiment treebank like tree.
 
+    :param sentence:
+        String that needs to be converted.
+    :return:
+        String encoding tree structure.
+    """
     parser = CoreNLPParser()
 
     # Parse sentence in nltk tree nodes
@@ -52,7 +59,13 @@ def convert_text_tree(sentence):
 
 
 def get_node_text(t):
+    """ Uses corenlp constituency parser to build a tree structure.
 
+    :param t:
+        nltk.tree.Tree instance.
+    :return:
+        Sentiment Treebank like String compatible with features.Tree.
+    """
     logging.debug('Processing node {0}'.format(repr(t)))
 
     if not isinstance(t, nltk_tree):
@@ -79,4 +92,3 @@ def get_node_text(t):
                 txt_1 = '(2 {0} {1})'.format(txt_2, txt_1)
 
             return txt_1
-

@@ -6,6 +6,7 @@
 
 
 import numpy as np
+import pytest
 import random
 # from sklearn.utils.estimator_checks import check_estimator
 #from src.models import train_model
@@ -59,6 +60,13 @@ class TestRNTN(object):
         assert y_pred.shape == (10, 5)
         print(y_pred)
 
+    def test_predict_proba_full_tree(self):
+        data_mgr = DataManager()
+        r = RNTN(model_name='test')
+        x = np.asarray(data_mgr.x_test[0:10]).reshape(-1, 1)
+        y_pred = r.predict_proba_full_tree(x)
+        print(y_pred)
+
     def test_word(self):
         data_mgr = DataManager()
 
@@ -66,7 +74,8 @@ class TestRNTN(object):
             r = RNTN(model_name='word-test')
             x = np.asarray(data_mgr.x_train).reshape(-1, 1)
             r._build_vocabulary(x[:, 0])
-            r._build_model_graph_var(r.embedding_size, r.V_, r.label_size)
+            r._build_model_graph_var(r.embedding_size, r.V_, r.label_size,
+                                     r._regularization_l2_func(r.regularization_rate))
             s.run(tf.global_variables_initializer())
             t = r.get_word(23)
             assert t is not None

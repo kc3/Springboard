@@ -46,7 +46,7 @@ def train_rntn(model_name=None, num_samples=None, params=None):
     clf = RNTN(model_name=model_name)
 
     if params is None:
-        params = {'batch_size': [35], 'num_epochs': [10], 'training_rate': [0.01, 0.001, 0.0001]}
+        params = {'batch_size': [35], 'num_epochs': [10], 'training_rate': [0.0001]}
 
     score_func = clf.loss()
     if num_samples is None:
@@ -65,8 +65,11 @@ def train_rntn(model_name=None, num_samples=None, params=None):
         y_test = np.asarray([x_test[i, 0].root.label for i in range(len(x_test))])
 
     cv = train_model(clf, params, score_func, x_train, y_train, x_dev, y_dev)
+    logging.info('Training results: {0}'.format(cv.cv_results_))
+
     logging.info('Best Model Name: {0}'.format(cv.best_estimator_.model_name))
     logging.info('Best Model Parameters: {0}'.format(cv.best_params_))
+    logging.info('Best Model Score: {0}'.format(cv.best_score_))
 
     y_pred = cv.predict(x_test)
     model_loss = cv.score(x_test.reshape(-1, 1), y_test)

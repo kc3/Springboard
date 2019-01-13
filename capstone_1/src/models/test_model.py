@@ -4,6 +4,7 @@
 # Tests for training and evaluation of all models.
 #
 
+import pytest
 # from sklearn.utils.estimator_checks import check_estimator
 from src.models import train_model
 from src.models.predict_model import predict_model, convert_text_tree
@@ -18,8 +19,10 @@ class TestModel(object):
         params = {'batch_size': [35], 'num_epochs': [3], 'training_rate': [0.01]}
         train_model.train_rntn(model_name='test-rntn', num_samples=100, params=params)
 
+    @pytest.mark.run_these_please
     def test_predict(self):
         y = predict_model('Effective but too-tepid biopic', model_name='test')
+        print(y)
         assert y in range(0, 5)
 
     def test_convert_text_tree(self):

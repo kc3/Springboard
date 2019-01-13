@@ -36,9 +36,9 @@ class RNTN(BaseEstimator, ClassifierMixin):
     def __init__(self,
                  embedding_size=35,
                  num_epochs=1,
-                 batch_size=25,
+                 batch_size=30,
                  compose_func='relu',
-                 training_rate=0.01,
+                 training_rate=0.0001,
                  regularization_rate=0.01,
                  label_size=5,
                  model_name=None
@@ -161,7 +161,8 @@ class RNTN(BaseEstimator, ClassifierMixin):
                     self._build_model_placeholders()
 
                     # Build model graph variables
-                    self._build_model_graph_var(self.embedding_size, self.V_, self.label_size)
+                    self._build_model_graph_var(self.embedding_size, self.V_, self.label_size,
+                                                self._regularization_l2_func(self.regularization_rate))
 
                     # Build logging variables
                     self._build_model_logging_var()
@@ -170,7 +171,7 @@ class RNTN(BaseEstimator, ClassifierMixin):
                     session.run(tf.global_variables_initializer())
 
                     # Load model
-                    if epoch > 0:
+                    if epoch > 0 and start_idx == 0:
                         saver = tf.train.Saver()
                         save_path = self._get_model_save_path()
                         saver.restore(session, save_path)
@@ -193,7 +194,8 @@ class RNTN(BaseEstimator, ClassifierMixin):
                     logits = self._build_batch_graph(self.get_word, self._get_compose_func())
 
                     # Build loss graph
-                    loss_tensor = self._build_loss_graph(labels_no_grad, logits, self.regularization_rate)
+                    loss_tensor = self._build_loss_graph(labels_no_grad, logits,
+                                                         self._regularization_l2_func(self.regularization_rate))
 
                     # Loss
                     # Invoke the graph for loss function with this feed dict.
@@ -281,23 +283,8 @@ class RNTN(BaseEstimator, ClassifierMixin):
         # Initialize a session to run tensorflow operations on a new graph.
         with tf.Graph().as_default(), tf.Session() as session:
 
-            # Create placeholders
-            self._build_model_placeholders()
-
-            # Build model graph
-            self._build_model_graph_var(self.embedding_size, self.V_, self.label_size)
-
-            # Build logging variables
-            self._build_model_logging_var()
-
-            # Initialize all variables in this graph
-            session.run(tf.global_variables_initializer())
-
             # Load model
-            saver = tf.train.Saver()
-            save_path = self._get_model_save_path()
-            saver.restore(session, save_path)
-            logging.info('Saved model {0} loaded from disk.'.format(save_path))
+            self._load_model(session)
 
             # Build feed dict
             feed_dict = self._build_feed_dict(x)
@@ -351,7 +338,7 @@ class RNTN(BaseEstimator, ClassifierMixin):
         return loss_val
 
     @staticmethod
-    def _build_model_graph_var(embedding_size, vocabulary_size, label_size):
+    def _build_model_graph_var(embedding_size, vocabulary_size, label_size, regularization_func):
         """ Builds Computational Graph for model state in Tensorflow.
 
         Defines and initializes the following:
@@ -377,6 +364,8 @@ class RNTN(BaseEstimator, ClassifierMixin):
             Vocabulary size
         :param label_size:
             Label size
+        :param regularization_func:
+            Function used for regularization of weights.
         :return:
             None.
         """
@@ -387,30 +376,41 @@ class RNTN(BaseEstimator, ClassifierMixin):
         with tf.variable_scope('Embeddings', reuse=tf.AUTO_REUSE):
             _ = tf.get_variable(name='L',
                                 shape=[embedding_size, vocabulary_size],
-                                initializer=tf.random_uniform_initializer(-1*uniform_r, uniform_r))
+                                initializer=tf.random_uniform_initializer(-1*uniform_r, uniform_r),
+                                trainable=True,
+                                regularizer=regularization_func)
 
         # Build Weights and bias term for Composition layer
         with tf.variable_scope('Composition', reuse=tf.AUTO_REUSE):
             _ = tf.get_variable(name='W',
                                 shape=[embedding_size, 2*embedding_size],
-                                initializer=tf.random_uniform_initializer(-1*uniform_r, uniform_r))
+                                initializer=tf.random_uniform_initializer(-1*uniform_r, uniform_r),
+                                trainable=True,
+                                regularizer=regularization_func)
 
             _ = tf.get_variable(name='b',
                                 shape=[embedding_size, 1],
-                                initializer=tf.random_uniform_initializer(-1*uniform_r, uniform_r))
+                                initializer=tf.random_uniform_initializer(-1*uniform_r, uniform_r),
+                                trainable=True)
 
             _ = tf.get_variable(name='T',
                                 shape=[2*embedding_size, 2*embedding_size, embedding_size],
-                                initializer=tf.random_uniform_initializer(-1*uniform_r, uniform_r))
+                                initializer=tf.random_uniform_initializer(-1*uniform_r, uniform_r),
+                                trainable=True,
+                                regularizer=regularization_func)
 
         # Build Weights and bias term for Projection Layer
         with tf.variable_scope('Projection', reuse=tf.AUTO_REUSE):
             _ = tf.get_variable(name='U',
                                 shape=[embedding_size, label_size],
-                                initializer=tf.random_uniform_initializer(-1*uniform_r, uniform_r))
+                                initializer=tf.random_uniform_initializer(-1*uniform_r, uniform_r),
+                                trainable=True,
+                                regularizer=regularization_func)
 
             _ = tf.get_variable(name='bs',
-                                shape=[label_size, 1])
+                                shape=[label_size, 1],
+                                initializer=tf.random_uniform_initializer(-1 * uniform_r, uniform_r),
+                                trainable=True)
 
     @staticmethod
     def _build_model_placeholders():
@@ -628,7 +628,18 @@ class RNTN(BaseEstimator, ClassifierMixin):
         return logits
 
     @staticmethod
-    def _build_loss_graph(labels, logits, regularization_rate):
+    def _regularization_l2_func(regularization_rate):
+        """ Regularization function.
+
+        :param regularization_rate:
+            Regularization rate.
+        :return:
+            Lambda function (tensor) -> tensor.
+        """
+        return lambda x: tf.multiply(tf.nn.l2_loss(x), regularization_rate)
+
+    @staticmethod
+    def _build_loss_graph(labels, logits, regularization_func):
         """ Builds loss function graph.
 
         Computes the cross entropy loss for sentiment prediction values.
@@ -637,8 +648,8 @@ class RNTN(BaseEstimator, ClassifierMixin):
             One hot encoded ground truth labels.
         :param logits:
             Logits (unscaled probabilities) for every node.
-        :param regularization_rate:
-            Regularization rate.
+        :param regularization_func:
+            Regularization function for weights.
         :return:
             Loss tensor for the whole network.
         """
@@ -655,11 +666,9 @@ class RNTN(BaseEstimator, ClassifierMixin):
         with tf.variable_scope('Projection', reuse=True):
             U = tf.get_variable('U')
 
-        regularization_composition_loss = tf.nn.l2_loss(W) + tf.nn.l2_loss(T)
-        regularization_projection_loss = tf.nn.l2_loss(U)
-        regularization_loss = tf.multiply(
-            tf.add(regularization_composition_loss, regularization_projection_loss),
-            regularization_rate)
+        regularization_composition_loss = tf.add(regularization_func(W), regularization_func(T))
+        regularization_projection_loss = regularization_func(U)
+        regularization_loss = tf.add(regularization_composition_loss, regularization_projection_loss)
 
         # Return Total Loss
         total_loss = tf.add(cross_entropy_loss, regularization_loss)
@@ -977,7 +986,8 @@ class RNTN(BaseEstimator, ClassifierMixin):
         self._build_model_placeholders()
 
         # Build model graph
-        self._build_model_graph_var(self.embedding_size, self.V_, self.label_size)
+        self._build_model_graph_var(self.embedding_size, self.V_, self.label_size,
+                                    self._regularization_l2_func(self.regularization_rate))
 
         # Build logging variables
         self._build_model_logging_var()
@@ -990,3 +1000,47 @@ class RNTN(BaseEstimator, ClassifierMixin):
         save_path = self._get_model_save_path()
         saver.restore(session, save_path)
         logging.info('Saved model {0} loaded from disk.'.format(save_path))
+
+    def predict_proba_full_tree(self, x):
+        """ Computes the prediction for each node in the tree.
+
+        :param x:
+            An 2d ndarray where each element is a tree.
+        :return y_prob:
+            Softmax probabilities of each class for each tree node.
+        """
+
+        logging.info('Model RNTN predict_full_tree() called on {0} testing samples.'.format(x.shape[0]))
+        x = x[:, 0]
+
+        # Load vocabulary
+        self._load_vocabulary()
+
+        # Initialize a session to run tensorflow operations on a new graph.
+        with tf.Graph().as_default(), tf.Session() as session:
+
+            # Load model
+            self._load_model(session)
+
+            # Build feed dict
+            feed_dict = self._build_feed_dict(x)
+
+            # Build logit functions
+            # Get labels
+            labels = tf.get_default_graph().get_tensor_by_name('Inputs/label:0')
+
+            # Get length of the tensor array
+            n = tf.squeeze(tf.shape(labels)).eval(feed_dict)
+            logging.info('Feed Dict has {0} labels'.format(n))
+
+            # Build batch graph
+            logits = self._build_batch_graph(self.get_word, self._get_compose_func())
+
+            # Get softmax probabilities for the tensors.
+            y = tf.squeeze(tf.nn.softmax(logits))
+
+            # Evaluate values
+            y_prob = y.eval(feed_dict)
+
+        logging.info('Model RNTN predict_full_tree() returned.')
+        return y_prob
