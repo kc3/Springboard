@@ -37,8 +37,8 @@ class RNTN(BaseEstimator, ClassifierMixin):
                  embedding_size=35,
                  num_epochs=1,
                  batch_size=30,
-                 compose_func='relu',
-                 training_rate=0.0001,
+                 compose_func='tanh',
+                 training_rate=0.01,
                  regularization_rate=0.01,
                  label_size=5,
                  model_name=None
@@ -370,32 +370,30 @@ class RNTN(BaseEstimator, ClassifierMixin):
             None.
         """
 
+        # Used to initialize word vectors
         uniform_r = 0.0001
 
         # Build Word Embeddings.
         with tf.variable_scope('Embeddings', reuse=tf.AUTO_REUSE):
             _ = tf.get_variable(name='L',
                                 shape=[embedding_size, vocabulary_size],
-                                initializer=tf.random_uniform_initializer(-1*uniform_r, uniform_r),
+                                initializer=tf.random_uniform_initializer(-1 * uniform_r, uniform_r),
                                 trainable=True,
                                 regularizer=regularization_func)
 
         # Build Weights and bias term for Composition layer
         with tf.variable_scope('Composition', reuse=tf.AUTO_REUSE):
             _ = tf.get_variable(name='W',
-                                shape=[embedding_size, 2*embedding_size],
-                                initializer=tf.random_uniform_initializer(-1*uniform_r, uniform_r),
+                                shape=[embedding_size, 2 * embedding_size],
                                 trainable=True,
                                 regularizer=regularization_func)
 
             _ = tf.get_variable(name='b',
                                 shape=[embedding_size, 1],
-                                initializer=tf.random_uniform_initializer(-1*uniform_r, uniform_r),
                                 trainable=True)
 
             _ = tf.get_variable(name='T',
-                                shape=[2*embedding_size, 2*embedding_size, embedding_size],
-                                initializer=tf.random_uniform_initializer(-1*uniform_r, uniform_r),
+                                shape=[2 * embedding_size, 2 * embedding_size, embedding_size],
                                 trainable=True,
                                 regularizer=regularization_func)
 
@@ -403,13 +401,11 @@ class RNTN(BaseEstimator, ClassifierMixin):
         with tf.variable_scope('Projection', reuse=tf.AUTO_REUSE):
             _ = tf.get_variable(name='U',
                                 shape=[embedding_size, label_size],
-                                initializer=tf.random_uniform_initializer(-1*uniform_r, uniform_r),
                                 trainable=True,
                                 regularizer=regularization_func)
 
             _ = tf.get_variable(name='bs',
                                 shape=[label_size, 1],
-                                initializer=tf.random_uniform_initializer(-1 * uniform_r, uniform_r),
                                 trainable=True)
 
     @staticmethod
@@ -617,7 +613,7 @@ class RNTN(BaseEstimator, ClassifierMixin):
         tensors, _ = tf.while_loop(cond, body, [tensors, 0], parallel_iterations=1)
 
         # Concatenate and reshape tensor array for projection
-        p = tf.reshape(tf.squeeze(tensors.concat()), [-1, n])
+        p = tf.transpose(tf.reshape(tf.squeeze(tensors.concat()), [n, -1]))
 
         # Add projection layer
         with tf.variable_scope('Projection', reuse=True):

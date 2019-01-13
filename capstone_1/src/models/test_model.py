@@ -19,11 +19,12 @@ class TestModel(object):
         params = {'batch_size': [35], 'num_epochs': [3], 'training_rate': [0.01]}
         train_model.train_rntn(model_name='test-rntn', num_samples=100, params=params)
 
-    @pytest.mark.run_these_please
     def test_predict(self):
-        y = predict_model('Effective but too-tepid biopic', model_name='test')
+        y, y_probs = predict_model('Effective but too-tepid biopic', model_name='test')
         print(y)
+        print(y_probs)
         assert y in range(0, 5)
+        assert y_probs.shape[-1] == 5
 
     def test_convert_text_tree(self):
         x = 'But he somehow pulls it off .'

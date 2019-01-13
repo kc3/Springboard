@@ -6,6 +6,7 @@
 </head>
 <body>
 {% if text %}
+    <script type=text/javascript src="{{ url_for('static', filename='js/tree.js') }}"></script>
     <h1>Please enter movie review text to analyze!</h1>
     <form action="/" method="post">
         Review:<br>
@@ -15,8 +16,13 @@
     </form>
     <h3>You entered:</h3>
     <h4><i>{{ text }}</i></h4>
-    <h3>Prediction (0-4): <b><i>{{ label }}</i></b></h3>
+    <h3>Prediction (0-4): <b>{{ label }}</b></h3>
     <h3>Sentiment tree:</h3>
+    <br>
+    <h4><i>{{ tree_txt }}</i></h4>
+    <br>
+    <canvas id="treeCanvas" width="600" height="600" style="border:1px solid #000000;">
+    </canvas>
 {% else %}
     <h1>Please enter movie review text to analyze!</h1>
     <form action="/" method="post">

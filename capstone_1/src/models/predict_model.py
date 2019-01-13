@@ -38,7 +38,7 @@ def predict_model(x, model_name='test'):
     y_pred = r.predict_proba_full_tree(trees)
     y = np.argmax(y_pred[-1])
 
-    return y
+    return y, y_pred
 
 
 def convert_text_tree(sentence):

@@ -21,10 +21,10 @@ def create_app(config=None):
     def sentiment():
         if request.method == 'POST':
             review_text = request.form['text']
-            label = predict_model(review_text)
-            return render_template('sentiment.html', text=review_text, label=label)
+            label, tree_txt = predict_model(review_text)
+            return render_template('sentiment.html', text=review_text, label=label, tree_txt=tree_txt)
         else:
-            return render_template('sentiment.html', text=None, label=None)
+            return render_template('sentiment.html', text=None, label=None, tree_txt=None)
 
     return app
 
