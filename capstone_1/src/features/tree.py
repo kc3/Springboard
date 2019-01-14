@@ -30,6 +30,9 @@ class Node:
         self.left = None
         self.right = None
 
+        # Probabilities
+        self.probabilities = None
+
     def __str__(self):
         if self.isLeaf:
             return '({0} {1})'.format(self.label, self.word)
@@ -47,6 +50,24 @@ class Node:
                 return '{0} {1}'.format(self.left.text(), self.right.text())
             else:
                 raise AttributeError('isLeaf is false and no children found.')
+
+    def to_json(self):
+        if self.isLeaf:
+            return {
+                'word': self.word,
+                'left': {},
+                'right': {},
+                'label': self.label,
+                'probabilities': self.probabilities
+            }
+        else:
+            return {
+                'word': self.word,
+                'left': self.left.to_json(),
+                'right': self.right.to_json(),
+                'label': self.label,
+                'probabilities': self.probabilities
+            }
 #
 # Class to represent a Tree.
 #
@@ -63,6 +84,9 @@ class Tree:
 
     def text(self):
         return self.root.text()
+
+    def to_json(self):
+        return self.root.to_json()
 
     @staticmethod
     def _parse(tree_string):

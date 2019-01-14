@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 
+from flask import Flask, render_template, request
 import os
 import sys
 sys.path.append(os.getcwd())
 
 from src.models.predict_model import predict_model
-from flask import Flask, render_template, request
 
 
 def create_app(config=None):

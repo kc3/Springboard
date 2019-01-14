@@ -2,13 +2,13 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Sentiment Analysis Project.</title>
+    <title>Sentiment Analysis Movie Reviews.</title>
+    <!--script src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script-->
 </head>
 <body>
 {% if text %}
-    <script type=text/javascript src="{{ url_for('static', filename='js/tree.js') }}"></script>
     <h1>Please enter movie review text to analyze!</h1>
-    <form action="/" method="post">
+    <form id="treeForm" action="/" method="post">
         Review:<br>
         <textarea name="text" rows="4" cols="50"></textarea>
         <br>
@@ -18,11 +18,15 @@
     <h4><i>{{ text }}</i></h4>
     <h3>Prediction (0-4): <b>{{ label }}</b></h3>
     <h3>Sentiment tree:</h3>
-    <br>
-    <h4><i>{{ tree_txt }}</i></h4>
-    <br>
     <canvas id="treeCanvas" width="600" height="600" style="border:1px solid #000000;">
     </canvas>
+    <script type=text/javascript src="{{ url_for('static', filename='tree.js') }}"></script>
+    <script type="text/javascript">
+        draw_tree({{ tree_txt|tojson }});
+    </script>
+    <br>
+    <h4><i>{{ tree_txt|tojson }}</i></h4>
+    <br>
 {% else %}
     <h1>Please enter movie review text to analyze!</h1>
     <form action="/" method="post">
