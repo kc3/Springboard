@@ -38,7 +38,7 @@ class RNTN(BaseEstimator, ClassifierMixin):
                  num_epochs=1,
                  batch_size=30,
                  compose_func='tanh',
-                 training_rate=0.01,
+                 training_rate=0.001,
                  regularization_rate=0.01,
                  label_size=5,
                  model_name=None
@@ -202,16 +202,50 @@ class RNTN(BaseEstimator, ClassifierMixin):
                     epoch_loss = loss_tensor.eval(feed_dict)
                     logging.info('Training Loss after optimization = {0}'.format(epoch_loss))
 
-                    train_loss_val = tf.get_default_graph().get_tensor_by_name('Logging/train_loss_val:0')
+                    # Update training loss
+                    train_epoch_loss_val = tf.get_default_graph().get_tensor_by_name('Logging/train_epoch_loss_val:0')
                     if start_idx == 0:
                         # Reset total loss for start of every epoch
-                        train_loss_val = tf.assign(train_loss_val, loss_tensor)
+                        train_epoch_loss_val = tf.assign(train_epoch_loss_val, loss_tensor)
                     else:
                         # Update total loss
-                        train_loss_val = tf.assign_add(train_loss_val, loss_tensor)
+                        train_epoch_loss_val = tf.assign_add(train_epoch_loss_val, loss_tensor)
 
                     total_loss += epoch_loss
-                    logging.info('Updated total training loss: {0}'.format(train_loss_val.eval(feed_dict)))
+                    logging.info('Updated total training loss: {0}'.format(train_epoch_loss_val.eval(feed_dict)))
+
+                    # Update training accuracy
+                    train_epoch_cum_sum_logits = tf.get_default_graph()\
+                        .get_tensor_by_name('Logging/train_epoch_cum_sum_logits:0')
+                    train_epoch_accuracy_val = tf.get_default_graph()\
+                        .get_tensor_by_name('Logging/train_epoch_accuracy_val:0')
+
+                    y_pred = self._predict_from_logits(logits)
+                    labels_int = tf.cast(labels, tf.int32)
+                    curr_y_pred_sum = tf.reduce_sum(tf.cast(tf.equal(y_pred, labels_int), tf.float32))
+                    accuracy = tf.divide(curr_y_pred_sum, tf.constant(n, dtype=tf.float32))
+
+                    if start_idx == 0:
+                        # Reset total accuracy for start of every epoch
+                        train_epoch_cum_sum_logits = tf.assign(train_epoch_cum_sum_logits,
+                                                               tf.constant(n, dtype=tf.int32))
+                        train_epoch_accuracy_val = tf.assign(train_epoch_accuracy_val, accuracy)
+                    else:
+                        # Update total accuracy
+                        past_y_n = train_epoch_cum_sum_logits.eval(feed_dict)
+                        past_y_pred_sum = tf.multiply(train_epoch_accuracy_val,
+                                                      tf.constant(past_y_n, dtype=tf.float32))
+                        total_y_pred_sum = tf.add(past_y_pred_sum, curr_y_pred_sum)
+                        train_epoch_cum_sum_logits = tf.assign_add(train_epoch_cum_sum_logits,
+                                                                   tf.constant(n, dtype=tf.int32))
+                        cumulative_accuracy = tf.divide(total_y_pred_sum,
+                                                        tf.constant(past_y_n + n, dtype=tf.float32))
+                        train_epoch_accuracy_val = tf.assign(train_epoch_accuracy_val, cumulative_accuracy)
+
+                    logging.info('Updated total sum logits: {0}'.format(
+                        train_epoch_cum_sum_logits.eval(feed_dict)))
+                    logging.info('Updated total training accuracy: {0}'.format(
+                        train_epoch_accuracy_val.eval(feed_dict)))
 
                     # Build optimizer graph
                     optimizer_tensor = self._build_optimizer_graph(self.training_rate, loss_tensor)
@@ -231,7 +265,7 @@ class RNTN(BaseEstimator, ClassifierMixin):
             logging.info('Total Training Loss: {0} for epoch {1}'.format(total_loss, epoch))
 
             # Log variables to tensorboard
-            self._record_training_summary(epoch)
+            self._eval_epoch_metrics(epoch)
 
         logging.info('Model {0} Training Complete.'.format(self.model_name))
 
@@ -258,7 +292,7 @@ class RNTN(BaseEstimator, ClassifierMixin):
 
         y_class_prob = self.predict_proba(x)
 
-        # Get maximum arg val for the logits.
+        # Get maximum arg val for the class probabilities.
         y_pred = np.argmax(y_class_prob, axis=-1)
 
         logging.info('Model RNTN predict() completed.')
@@ -320,7 +354,7 @@ class RNTN(BaseEstimator, ClassifierMixin):
         return make_scorer(self._loss, greater_is_better=False, needs_proba=True)
 
     def _loss(self, actuals, proba):
-        """ Cost function computational graph invocation.
+        """ Cost function called for computing cross entropy loss using numpy.
 
         :param actuals:
             Actual values (ground truth)
@@ -444,27 +478,34 @@ class RNTN(BaseEstimator, ClassifierMixin):
         """
         # Build Logging variables.
         with tf.variable_scope('Logging', reuse=tf.AUTO_REUSE):
-            train_loss_val = tf.get_variable(name='train_loss_val',
+            train_epoch_loss_val = tf.get_variable(name='train_epoch_loss_val',
                                              shape=(),
                                              trainable=False,
                                              initializer=tf.zeros_initializer)
-            train_accuracy_val = tf.get_variable(name='train_accuracy_val',
+            train_epoch_accuracy_val = tf.get_variable(name='train_epoch_accuracy_val',
+                                                 shape=(),
+                                                 trainable=False,
+                                                 initializer=tf.zeros_initializer)
+            train_epoch_cum_sum_logits = tf.get_variable(name='train_epoch_cum_sum_logits',
+                                                 shape=(),
+                                                 dtype=tf.int32,
+                                                 trainable=False,
+                                                 initializer=tf.zeros_initializer)
+
+            dev_epoch_loss_val = tf.get_variable(name='dev_epoch_loss_val',
+                                                 shape=(),
+                                                 trainable=False,
+                                                 initializer=tf.zeros_initializer)
+            dev_epoch_accuracy_val = tf.get_variable(name='dev_epoch_accuracy_val',
                                                  shape=(),
                                                  trainable=False,
                                                  initializer=tf.zeros_initializer)
 
-            _ = tf.get_variable(name='test_loss',
-                                shape=(),
-                                trainable=False,
-                                initializer=tf.zeros_initializer)
-            _ = tf.get_variable(name='test_accuracy',
-                                shape=(),
-                                trainable=False,
-                                initializer=tf.zeros_initializer)
-
         with tf.name_scope('Logging_Variables'):
-            _ = tf.summary.scalar('train_loss', train_loss_val)
-            _ = tf.summary.scalar('train_accuracy', train_accuracy_val)
+            _ = tf.summary.scalar('train_epoch_loss', train_epoch_loss_val)
+            _ = tf.summary.scalar('train_epoch_accuracy', train_epoch_accuracy_val)
+            _ = tf.summary.scalar('dev_epoch_loss', dev_epoch_loss_val)
+            _ = tf.summary.scalar('dev_epoch_accuracy', dev_epoch_accuracy_val)
 
     # Function to get word embedding
     @staticmethod
@@ -923,52 +964,6 @@ class RNTN(BaseEstimator, ClassifierMixin):
 
         return -1
 
-    def _record_training_summary(self, epoch):
-        """ Records training summary to logs.
-
-        :return:
-            None.
-        """
-
-        with tf.Graph().as_default(), tf.Session() as session:
-            self._load_model(session)
-
-            merge = tf.summary.merge_all()
-
-            # Create log file writer to record training progress.
-            # Logs can be viewed by running in cmd window: "tensorboard --logdir logs"
-            training_writer = tf.summary.FileWriter("./logs/{}/training".format(self.model_name), session.graph)
-
-            summary = session.run(merge)
-
-            # Write the current training status to the log files
-            training_writer.add_summary(summary, epoch)
-
-    def record_testing_summary(self):
-        """ Records training summary to logs.
-
-        :return:
-            None.
-        """
-
-        with tf.Graph().as_default(), tf.Session() as session:
-            self._load_model(session)
-
-            with tf.variable_scope('Logging', reuse=True):
-                test_loss = tf.get_variable('test_loss')
-                test_accuracy = tf.get_variable('test_accuracy')
-
-            merge = tf.summary.merge([test_loss, test_accuracy])
-
-            # Create log file writer to record training progress.
-            # Logs can be viewed by running in cmd window: "tensorboard --logdir logs"
-            testing_writer = tf.summary.FileWriter("./logs/{}/testing".format(self.model_name), session.graph)
-
-            summary = session.run([merge])
-
-            # Write the current training status to the log files
-            testing_writer.add_summary(summary)
-
     def _load_model(self, session):
         """ Loads model from disk into session variables
 
@@ -1040,3 +1035,88 @@ class RNTN(BaseEstimator, ClassifierMixin):
 
         logging.info('Model RNTN predict_full_tree() returned.')
         return y_prob
+
+    def _predict_from_logits(self, logits):
+        """ Returns a tensor that makes predictions from logits.
+
+        :param logits:
+            Unscaled probabilities output from the neural network.
+        :return:
+            Tensor for making predictions.
+        """
+        # Get softmax probabilities for the tensors.
+        y_class_prob = tf.squeeze(tf.nn.softmax(logits))
+
+        # Get maximum arg val for the class probabilities.
+        y_pred = tf.argmax(y_class_prob, axis=-1, output_type=tf.int32)
+
+        return y_pred
+
+    def _eval_epoch_metrics(self, epoch):
+        """ Evaluate current epoch metrics.
+
+        :param epoch:
+            Epoch num of the training run.
+        :return:
+            None.
+        """
+        x_dev = DataManager().x_dev
+        y_dev = [x_dev[i].root.label for i in range(len(x_dev))]
+
+        logging.info('Model RNTN _eval_epoch_metrics() called on {0} testing samples.'.format(len(x_dev)))
+
+        # Initialize a session to run tensorflow operations on a new graph.
+        with tf.Graph().as_default(), tf.Session() as session:
+
+            # Load model
+            self._load_model(session)
+
+            # Build feed dict
+            feed_dict = self._build_feed_dict(x_dev)
+
+            # Build logit functions
+            # Get labels
+            labels = tf.get_default_graph().get_tensor_by_name('Inputs/label:0')
+            labels_encoded = tf.one_hot(labels, self.label_size)
+            labels_no_grad = tf.stop_gradient(labels_encoded)
+
+            # Get length of the tensor array
+            n = tf.squeeze(tf.shape(labels)).eval(feed_dict)
+            logging.info('Feed Dict has {0} labels'.format(n))
+
+            # Build batch graph
+            logits = self._build_batch_graph(self.get_word, self._get_compose_func())
+
+            # Build loss graph
+            loss_tensor = self._build_loss_graph(labels_no_grad, logits,
+                                                 self._regularization_l2_func(self.regularization_rate))
+
+            # Update loss
+            dev_epoch_loss_val = tf.get_default_graph().get_tensor_by_name('Logging/dev_epoch_loss_val:0')
+            dev_epoch_loss_val = tf.assign(dev_epoch_loss_val, loss_tensor)
+            logging.info('Cross Validation Loss after optimization = {0}'.format(dev_epoch_loss_val.eval(feed_dict)))
+
+            # Get predictions for the tensors.
+            y_pred = self._predict_from_logits(logits)
+            labels_int = tf.cast(labels, tf.int32)
+            curr_y_pred_sum = tf.reduce_sum(tf.cast(tf.equal(y_pred, labels_int), tf.float32))
+            accuracy = tf.divide(curr_y_pred_sum, tf.constant(n, dtype=tf.float32))
+
+            dev_epoch_accuracy_val = tf.get_default_graph().get_tensor_by_name('Logging/dev_epoch_accuracy_val:0')
+            dev_epoch_accuracy_val = tf.assign(dev_epoch_accuracy_val, accuracy)
+            logging.info('Cross Validation Accuracy after optimization = {0}'.format(
+                dev_epoch_accuracy_val.eval(feed_dict)))
+
+            # Record Summary operation
+            merge = tf.summary.merge_all()
+
+            # Create log file writer to record training progress.
+            # Logs can be viewed by running in cmd window: "tensorboard --logdir logs"
+            training_writer = tf.summary.FileWriter("./logs/{}/training".format(self.model_name), session.graph)
+
+            summary = session.run(merge)
+
+            # Write the current training status to the log files
+            training_writer.add_summary(summary, epoch)
+            logging.info('Model RNTN _eval_epoch_metrics() returned.')
+

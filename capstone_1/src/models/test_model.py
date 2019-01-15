@@ -16,7 +16,7 @@ class TestModel(object):
     #    check_estimator(train_model.RNTN)
 
     def test_rntn(self):
-        params = {'batch_size': [35], 'num_epochs': [3], 'training_rate': [0.01]}
+        params = {'num_epochs': [3], 'training_rate': [0.001]}
         train_model.train_rntn(model_name='test-rntn', num_samples=100, params=params)
 
     def test_predict(self):
