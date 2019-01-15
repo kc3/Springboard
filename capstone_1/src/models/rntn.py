@@ -171,7 +171,7 @@ class RNTN(BaseEstimator, ClassifierMixin):
                     session.run(tf.global_variables_initializer())
 
                     # Load model
-                    if epoch > 0 and start_idx == 0:
+                    if epoch > 0 or start_idx > 0:
                         saver = tf.train.Saver()
                         save_path = self._get_model_save_path()
                         saver.restore(session, save_path)
