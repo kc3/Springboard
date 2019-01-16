@@ -18,14 +18,12 @@
     <h4><i>{{ text }}</i></h4>
     <h3>Prediction (0-4): <b>{{ label }}</b></h3>
     <h3>Sentiment tree:</h3>
-    <canvas id="treeCanvas" width="600" height="600" style="border:1px solid #000000;">
+    <canvas id="treeCanvas" width="800" height="800" style="border:1px solid #000000;">
     </canvas>
     <script type=text/javascript src="{{ url_for('static', filename='tree.js') }}"></script>
     <script type="text/javascript">
-        draw_tree({{ tree_txt|tojson }});
+        draw_tree({{ tree_txt|tojson }}, 800, 800);
     </script>
-    <br>
-    <h4><i>{{ tree_txt|tojson }}</i></h4>
     <br>
 {% else %}
     <h1>Please enter movie review text to analyze!</h1>

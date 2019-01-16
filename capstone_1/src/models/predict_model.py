@@ -27,7 +27,8 @@ def predict_model(x, model_name='RNTN_30_tanh_35_5_None_10_0.01_0.001_8544'):
     logging.info('Parsing text {0}'.format(x))
 
     # Convert string to tree
-    tree_txt = convert_text_tree(x)
+    x_s = x.strip()
+    tree_txt = convert_text_tree(x_s)
 
     logging.info('Tree structure encoded as {0}'.format(tree_txt))
 
