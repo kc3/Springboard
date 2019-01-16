@@ -3,16 +3,32 @@ function get_color_value(label) {
     if (label == 0) {
         return "#FF0000";
     } else if (label == 1) {
-        return "#800000";
+        return "#ff9999";
     } else if (label == 2) {
         return "#FFFFFF";
     } else if (label == 3) {
-        return "#008000";
+        return "#3399ff";
     } else if (label == 4) {
-        return "#00FF00";
+        return "#0033cc";
     }
 
     return "#000000";
+}
+
+function get_circle_text(label) {
+    if (label == 0) {
+        return "--";
+    } else if (label == 1) {
+        return "-";
+    } else if (label == 2) {
+        return "0";
+    } else if (label == 3) {
+        return "+";
+    } else if (label == 4) {
+        return "++";
+    }
+
+    return "?";
 }
 
 function draw_circle(ctx, color, x, y, r) {
@@ -34,7 +50,7 @@ function draw_line(ctx, x1, y1, x2, y2) {
 
 function draw_text(ctx, text, x, y) {
     console.log(x + " " + y);
-    ctx.font = "10px Arial";
+    ctx.font = "15px Arial";
     ctx.strokeStyle = "#000000"
     ctx.strokeText(text, x, y);
 }
@@ -61,6 +77,7 @@ function draw_node(ctx, node, x, y, hmargin, vmargin) {
         draw_node(ctx, node["left"], x, y + vmargin, hmargin, vmargin);
         draw_node(ctx, node["right"], x + node["left"]["width"] * hmargin, y + vmargin, hmargin, vmargin);
         draw_circle(ctx, get_color_value(node["label"]), x + node["left"]["width"] * hmargin, y, r);
+        draw_text(ctx, get_circle_text(node["label"]), x + node["left"]["width"] * hmargin - 5, y + 5)
     } else {
         draw_text(ctx, node["word"], x + hmargin - node["word"].length * 5, y + 10);
     }

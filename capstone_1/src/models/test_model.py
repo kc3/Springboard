@@ -20,7 +20,7 @@ class TestModel(object):
         train_model.train_rntn(model_name='test-rntn', num_samples=100, params=params)
 
     def test_predict(self):
-        y, tree_json = predict_model('Effective but too-tepid biopic', model_name='test')
+        y, tree_json = predict_model('Effective but too-tepid biopic', model_name='test-rntn')
         print(y)
         print(tree_json)
         assert y in range(0, 5)
