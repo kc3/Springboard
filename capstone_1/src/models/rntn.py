@@ -181,10 +181,7 @@ class RNTN(BaseEstimator, ClassifierMixin):
                     feed_dict = self._build_feed_dict(x[start_idx:end_idx])
 
                     # Get labels
-                    # stop_gradient stops backprop for labels
                     labels = tf.get_default_graph().get_tensor_by_name('Inputs/label:0')
-                    labels_encoded = tf.one_hot(labels, self.label_size)
-                    labels_no_grad = tf.stop_gradient(labels_encoded)
 
                     # Get length of the tensor array
                     n = tf.squeeze(tf.shape(labels)).eval(feed_dict)
@@ -194,7 +191,7 @@ class RNTN(BaseEstimator, ClassifierMixin):
                     logits = self._build_batch_graph(self.get_word, self._get_compose_func())
 
                     # Build loss graph
-                    loss_tensor = self._build_loss_graph(labels_no_grad, logits,
+                    loss_tensor = self._build_loss_graph(labels, logits, self.label_size,
                                                          self._regularization_l2_func(self.regularization_rate))
 
                     # Loss
@@ -676,23 +673,35 @@ class RNTN(BaseEstimator, ClassifierMixin):
         return lambda x: tf.multiply(tf.nn.l2_loss(x), regularization_rate)
 
     @staticmethod
-    def _build_loss_graph(labels, logits, regularization_func):
+    def _build_loss_graph(labels, logits, label_size, regularization_func):
         """ Builds loss function graph.
 
         Computes the cross entropy loss for sentiment prediction values.
 
         :param labels:
-            One hot encoded ground truth labels.
+            Ground truth labels.
         :param logits:
             Logits (unscaled probabilities) for every node.
+        :param label_size:
+            Size of each label.
         :param regularization_func:
             Regularization function for weights.
         :return:
             Loss tensor for the whole network.
         """
 
+        # Exclude labels with value 2 while computing loss.
+        # This is needed to get around class imbalance problem.
+        idx = tf.where(tf.less(labels, 2))
+        labels_chosen = tf.gather(labels, idx)
+        logits_chosen = tf.gather(logits, idx)
+
+        # stop_gradient stops backprop for labels
+        labels_encoded = tf.one_hot(labels_chosen, label_size)
+        labels_no_grad = tf.stop_gradient(labels_encoded)
+
         # Get Cross Entropy Loss
-        cross_entropy = tf.nn.softmax_cross_entropy_with_logits_v2(labels=labels, logits=logits)
+        cross_entropy = tf.nn.softmax_cross_entropy_with_logits_v2(labels=labels_no_grad, logits=logits_chosen)
         cross_entropy_loss = tf.reduce_sum(cross_entropy)
 
         # Get Regularization Loss for weight terms excluding biases
@@ -1077,8 +1086,6 @@ class RNTN(BaseEstimator, ClassifierMixin):
             # Build logit functions
             # Get labels
             labels = tf.get_default_graph().get_tensor_by_name('Inputs/label:0')
-            labels_encoded = tf.one_hot(labels, self.label_size)
-            labels_no_grad = tf.stop_gradient(labels_encoded)
 
             # Get length of the tensor array
             n = tf.squeeze(tf.shape(labels)).eval(feed_dict)
@@ -1088,7 +1095,7 @@ class RNTN(BaseEstimator, ClassifierMixin):
             logits = self._build_batch_graph(self.get_word, self._get_compose_func())
 
             # Build loss graph
-            loss_tensor = self._build_loss_graph(labels_no_grad, logits,
+            loss_tensor = self._build_loss_graph(labels, logits, self.label_size,
                                                  self._regularization_l2_func(self.regularization_rate))
 
             # Update loss
