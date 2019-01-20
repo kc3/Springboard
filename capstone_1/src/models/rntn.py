@@ -157,25 +157,9 @@ class RNTN(BaseEstimator, ClassifierMixin):
                 # Initialize a session to run tensorflow operations on a new graph.
                 with tf.Graph().as_default(), tf.Session() as session:
 
-                    # Build placeholders for storing tree node information used to create computational graph.
-                    self._build_model_placeholders()
-
-                    # Build model graph variables
-                    self._build_model_graph_var(self.embedding_size, self.V_, self.label_size,
-                                                self._regularization_l2_func(self.regularization_rate))
-
-                    # Build logging variables
-                    self._build_model_logging_var()
-
-                    # Initialize all variables in this graph
-                    session.run(tf.global_variables_initializer())
-
-                    # Load model
-                    if epoch > 0 or start_idx > 0:
-                        saver = tf.train.Saver()
-                        save_path = self._get_model_save_path()
-                        saver.restore(session, save_path)
-                        logging.info('Saved model {0} loaded from disk.'.format(save_path))
+                    # Create or Load model
+                    reset = (epoch == 0 and start_idx == 0)
+                    self._load_model(session, reset)
 
                     # Build feed dict
                     feed_dict = self._build_feed_dict(x[start_idx:end_idx])
@@ -253,16 +237,14 @@ class RNTN(BaseEstimator, ClassifierMixin):
 
                     # Save model after full run
                     # Fit will always overwrite any model
-                    saver = tf.train.Saver()
-                    save_path = self._get_model_save_path()
-                    saver.save(session, save_path)
+                    self._save_model(session)
 
                 start_idx = end_idx
 
             logging.info('Total Training Loss: {0} for epoch {1}'.format(total_loss, epoch))
 
             # Log variables to tensorboard
-            self._eval_epoch_metrics(epoch)
+            self._record_epoch_metrics(epoch)
 
         logging.info('Model {0} Training Complete.'.format(self.model_name))
 
@@ -973,7 +955,7 @@ class RNTN(BaseEstimator, ClassifierMixin):
 
         return -1
 
-    def _load_model(self, session):
+    def _load_model(self, session, reset=False):
         """ Loads model from disk into session variables
 
         :param session:
@@ -996,10 +978,25 @@ class RNTN(BaseEstimator, ClassifierMixin):
         session.run(tf.global_variables_initializer())
 
         # Load model
+        if not reset:
+            saver = tf.train.Saver()
+            save_path = self._get_model_save_path()
+            saver.restore(session, save_path)
+            logging.info('Saved model {0} loaded from disk.'.format(save_path))
+
+    def _save_model(self, session):
+        """ Saves model to the disk. Should be called only by fit.
+
+        :param session:
+            Valid session object.
+        :return:
+            None.
+        """
+
+        # Save model for tensorflow reuse for next epoch
         saver = tf.train.Saver()
         save_path = self._get_model_save_path()
-        saver.restore(session, save_path)
-        logging.info('Saved model {0} loaded from disk.'.format(save_path))
+        saver.save(session, save_path)
 
     def predict_proba_full_tree(self, x):
         """ Computes the prediction for each node in the tree.
@@ -1061,7 +1058,7 @@ class RNTN(BaseEstimator, ClassifierMixin):
 
         return y_pred
 
-    def _eval_epoch_metrics(self, epoch):
+    def _record_epoch_metrics(self, epoch):
         """ Evaluate current epoch metrics.
 
         :param epoch:
@@ -1072,7 +1069,7 @@ class RNTN(BaseEstimator, ClassifierMixin):
         x_dev = DataManager().x_dev
         y_dev = [x_dev[i].root.label for i in range(len(x_dev))]
 
-        logging.info('Model RNTN _eval_epoch_metrics() called on {0} testing samples.'.format(len(x_dev)))
+        logging.info('Model RNTN _record_epoch_metrics() called on {0} testing samples.'.format(len(x_dev)))
 
         # Initialize a session to run tensorflow operations on a new graph.
         with tf.Graph().as_default(), tf.Session() as session:
@@ -1125,5 +1122,5 @@ class RNTN(BaseEstimator, ClassifierMixin):
 
             # Write the current training status to the log files
             training_writer.add_summary(summary, epoch)
-            logging.info('Model RNTN _eval_epoch_metrics() returned.')
+            logging.info('Model RNTN _record_epoch_metrics() returned.')
 
