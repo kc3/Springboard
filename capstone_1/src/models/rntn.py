@@ -173,15 +173,20 @@ class RNTN(BaseEstimator, ClassifierMixin):
 
                     # Build batch graph
                     logits = self._build_batch_graph(self.get_word, self._get_compose_func())
+                    #is_root = tf.get_default_graph().get_tensor_by_name('Inputs/is_root:0')
+                    #root_indices = tf.where(is_root)
+                    #root_logits = tf.gather(logits, root_indices)
+                    #root_labels = tf.gather(labels, root_indices)
 
                     # Build loss graph
                     loss_tensor = self._build_loss_graph(labels, logits, self.label_size,
-                                                         self._regularization_l2_func(self.regularization_rate))
+                                                         self._regularization_l2_func(self.regularization_rate),
+                                                         1.0, feed_dict)
 
                     # Loss
                     # Invoke the graph for loss function with this feed dict.
                     epoch_loss = loss_tensor.eval(feed_dict)
-                    logging.info('Training Loss after optimization = {0}'.format(epoch_loss))
+                    logging.info('Training Loss before balancing = {0}'.format(epoch_loss))
 
                     # Update training loss
                     train_epoch_loss_val = tf.get_default_graph().get_tensor_by_name('Logging/train_epoch_loss_val:0')
@@ -193,7 +198,7 @@ class RNTN(BaseEstimator, ClassifierMixin):
                         train_epoch_loss_val = tf.assign_add(train_epoch_loss_val, loss_tensor)
 
                     total_loss += epoch_loss
-                    logging.info('Updated total training loss: {0}'.format(train_epoch_loss_val.eval(feed_dict)))
+                    logging.debug('Updated total training loss: {0}'.format(train_epoch_loss_val.eval(feed_dict)))
 
                     # Update training accuracy
                     train_epoch_cum_sum_logits = tf.get_default_graph()\
@@ -223,17 +228,31 @@ class RNTN(BaseEstimator, ClassifierMixin):
                                                         tf.constant(past_y_n + n, dtype=tf.float32))
                         train_epoch_accuracy_val = tf.assign(train_epoch_accuracy_val, cumulative_accuracy)
 
-                    logging.info('Updated total sum logits: {0}'.format(
+                    logging.debug('Updated total sum logits: {0}'.format(
                         train_epoch_cum_sum_logits.eval(feed_dict)))
                     logging.info('Updated total training accuracy: {0}'.format(
                         train_epoch_accuracy_val.eval(feed_dict)))
 
+                    # Weights found by manual exploration of all nodes in the graph
+                    weights = tf.get_default_graph().get_tensor_by_name('Inputs/weight:0')
+
+                    # Balanced Loss tensor
+                    weighted_loss_tensor = self._build_loss_graph(labels, logits, self.label_size,
+                                                         self._regularization_l2_func(self.regularization_rate),
+                                                         weights, feed_dict)
+
+                    logging.info('Training Loss after balancing = {0}'.format(weighted_loss_tensor.eval(feed_dict)))
+
                     # Build optimizer graph
-                    optimizer_tensor = self._build_optimizer_graph(self.training_rate, loss_tensor)
+                    # Create optimizer
+                    all_variables = set(tf.all_variables())
+                    optimization_tensor = tf.train.AdagradOptimizer(self.training_rate).minimize(weighted_loss_tensor)
+                    # I honestly don't know how else to initialize adagrad in TensorFlow.
+                    session.run(tf.initialize_variables(set(tf.all_variables()) - all_variables))
 
                     # Train
                     # Invoke the graph for optimizer this feed dict.
-                    session.run([optimizer_tensor], feed_dict=feed_dict)
+                    session.run([optimization_tensor], feed_dict=feed_dict)
 
                     # Save model after full run
                     # Fit will always overwrite any model
@@ -391,15 +410,13 @@ class RNTN(BaseEstimator, ClassifierMixin):
             _ = tf.get_variable(name='L',
                                 shape=[embedding_size, vocabulary_size],
                                 initializer=tf.random_uniform_initializer(-1 * uniform_r, uniform_r),
-                                trainable=True,
-                                regularizer=regularization_func)
+                                trainable=True)
 
         # Build Weights and bias term for Composition layer
         with tf.variable_scope('Composition', reuse=tf.AUTO_REUSE):
             _ = tf.get_variable(name='W',
                                 shape=[embedding_size, 2 * embedding_size],
-                                trainable=True,
-                                regularizer=regularization_func)
+                                trainable=True)
 
             _ = tf.get_variable(name='b',
                                 shape=[embedding_size, 1],
@@ -407,15 +424,13 @@ class RNTN(BaseEstimator, ClassifierMixin):
 
             _ = tf.get_variable(name='T',
                                 shape=[2 * embedding_size, 2 * embedding_size, embedding_size],
-                                trainable=True,
-                                regularizer=regularization_func)
+                                trainable=True)
 
         # Build Weights and bias term for Projection Layer
         with tf.variable_scope('Projection', reuse=tf.AUTO_REUSE):
             _ = tf.get_variable(name='U',
                                 shape=[embedding_size, label_size],
-                                trainable=True,
-                                regularizer=regularization_func)
+                                trainable=True)
 
             _ = tf.get_variable(name='bs',
                                 shape=[label_size, 1],
@@ -447,6 +462,9 @@ class RNTN(BaseEstimator, ClassifierMixin):
 
             # Boolean indicating if the node is a root
             _ = tf.placeholder(tf.bool, shape=None, name='is_root')
+
+            # Float32 indicating weight of the node.
+            _ = tf.placeholder(tf.float32, shape=None, name='weight')
 
     @staticmethod
     def _build_model_logging_var():
@@ -655,7 +673,7 @@ class RNTN(BaseEstimator, ClassifierMixin):
         return lambda x: tf.multiply(tf.nn.l2_loss(x), regularization_rate)
 
     @staticmethod
-    def _build_loss_graph(labels, logits, label_size, regularization_func):
+    def _build_loss_graph(labels, logits, label_size, regularization_func, weights, feed_dict):
         """ Builds loss function graph.
 
         Computes the cross entropy loss for sentiment prediction values.
@@ -668,25 +686,31 @@ class RNTN(BaseEstimator, ClassifierMixin):
             Size of each label.
         :param regularization_func:
             Regularization function for weights.
+        :param weights:
+            Weight for balancing loss.
         :return:
             Loss tensor for the whole network.
         """
 
         # Exclude labels with value 2 while computing loss.
         # This is needed to get around class imbalance problem.
-        idx = tf.where(tf.less(labels, 2))
-        labels_chosen = tf.gather(labels, idx)
-        logits_chosen = tf.gather(logits, idx)
+        #idx = tf.where(tf.less(labels, 2))
+        #labels_chosen = tf.gather(labels, idx)
+        #logits_chosen = tf.gather(logits, idx)
 
         # stop_gradient stops backprop for labels
-        labels_encoded = tf.one_hot(labels_chosen, label_size)
+        labels_encoded = tf.one_hot(labels, label_size)
         labels_no_grad = tf.stop_gradient(labels_encoded)
 
         # Get Cross Entropy Loss
-        cross_entropy = tf.nn.softmax_cross_entropy_with_logits_v2(labels=labels_no_grad, logits=logits_chosen)
-        cross_entropy_loss = tf.reduce_sum(cross_entropy)
+        cross_entropy_loss = tf.losses.softmax_cross_entropy(labels_no_grad, logits, weights=weights)
+        #cross_entropy_loss = tf.reduce_sum(cross_entropy)
+        logging.info('Cross Entropy Loss: {0}'.format(cross_entropy_loss.eval(feed_dict)))
 
         # Get Regularization Loss for weight terms excluding biases
+        with tf.variable_scope('Embeddings', reuse=True):
+            L = tf.get_variable('L')
+
         with tf.variable_scope('Composition', reuse=True):
             W = tf.get_variable('W')
             T = tf.get_variable('T')
@@ -694,31 +718,16 @@ class RNTN(BaseEstimator, ClassifierMixin):
         with tf.variable_scope('Projection', reuse=True):
             U = tf.get_variable('U')
 
+        regularization_embedding_loss = regularization_func(L)
         regularization_composition_loss = tf.add(regularization_func(W), regularization_func(T))
         regularization_projection_loss = regularization_func(U)
-        regularization_loss = tf.add(regularization_composition_loss, regularization_projection_loss)
+        regularization_loss = tf.add(regularization_embedding_loss,
+                                     tf.add(regularization_composition_loss, regularization_projection_loss))
+        logging.info('Regularization Loss: {0}'.format(regularization_loss.eval(feed_dict)))
 
         # Return Total Loss
         total_loss = tf.add(cross_entropy_loss, regularization_loss)
         return total_loss
-
-    @staticmethod
-    def _build_optimizer_graph(learning_rate, loss_tensor):
-        """ Builds optimizer graph.
-
-        This is the primary graph tensor evaluated for training.
-        The optimizer is the standard GradientDescentOptimizer in tensorflow.
-
-        Back propagation is handled by the optimizer inside tensorflow.
-
-        :param learning_rate:
-            Learning rate.
-        :param loss_tensor:
-            Loss Tensor.
-        :return:
-            Optimization Tensor.
-        """
-        return tf.train.GradientDescentOptimizer(learning_rate).minimize(loss_tensor)
 
     def _build_feed_dict(self, trees):
         """ Prepares placeholders with feed dictionary variables.
@@ -739,6 +748,7 @@ class RNTN(BaseEstimator, ClassifierMixin):
         right_child_vals = []
         label_vals = []
         is_root_vals = []
+        weight_vals = []
 
         start_idx = 0
 
@@ -751,6 +761,7 @@ class RNTN(BaseEstimator, ClassifierMixin):
             right_child_vals.extend(tree_dict['right_child'])
             label_vals.extend(tree_dict['label'])
             is_root_vals.extend(tree_dict['is_root'])
+            weight_vals.extend(tree_dict['weight'])
             start_idx += len(tree_dict['is_leaf'])
 
         # Check whether tensors are written before read.
@@ -765,6 +776,7 @@ class RNTN(BaseEstimator, ClassifierMixin):
         right_child = graph.get_tensor_by_name('Inputs/right_child:0')
         label = graph.get_tensor_by_name('Inputs/label:0')
         is_root = graph.get_tensor_by_name('Inputs/is_root:0')
+        weight = graph.get_tensor_by_name('Inputs/weight:0')
 
         # Create feed dict
         feed_dict = {
@@ -773,7 +785,8 @@ class RNTN(BaseEstimator, ClassifierMixin):
             left_child: left_child_vals,
             right_child: right_child_vals,
             label: label_vals,
-            is_root: is_root_vals
+            is_root: is_root_vals,
+            weight: weight_vals
         }
 
         return feed_dict
@@ -792,9 +805,13 @@ class RNTN(BaseEstimator, ClassifierMixin):
                 3. left_child - Array of left children indices or -1 for leaf nodes.
                 4. right_child - Array of right children indices or -1 for leaf nodes.
                 5. label = Array of labels indicating sentiment label.
+                6. is_root = Boolean array indicating whether the node is a root node.
+                7. weight = Weight used for balancing training data.
         """
 
         logging.debug('Processing tree: {0}'.format(tree.text()))
+
+        weights = [124.26106195, 18.01347017, 1., 12.18457133, 52.02482401]
 
         # Flatten tree into a list using a stack
         nodes_dict = OrderedDict()
@@ -819,7 +836,8 @@ class RNTN(BaseEstimator, ClassifierMixin):
             'left_child': [nodes_dict[node.left]+start_idx if not node.isLeaf else -1 for node in nodes],
             'right_child': [nodes_dict[node.right]+start_idx if not node.isLeaf else -1 for node in nodes],
             'label': [node.label for node in nodes],
-            'is_root': [True if i == len(nodes)-1 else False for i in range(len(nodes))]
+            'is_root': [True if i == len(nodes)-1 else False for i in range(len(nodes))],
+            'weight': [weights[node.label] for node in nodes]
         }
 
         # checks
@@ -1090,10 +1108,15 @@ class RNTN(BaseEstimator, ClassifierMixin):
 
             # Build batch graph
             logits = self._build_batch_graph(self.get_word, self._get_compose_func())
+            #is_root = tf.get_default_graph().get_tensor_by_name('Inputs/is_root:0')
+            #root_indices = tf.where(is_root)
+            #root_logits = tf.gather(logits, root_indices)
+            #root_labels = tf.gather(labels, root_indices)
 
             # Build loss graph
             loss_tensor = self._build_loss_graph(labels, logits, self.label_size,
-                                                 self._regularization_l2_func(self.regularization_rate))
+                                                 self._regularization_l2_func(self.regularization_rate),
+                                                 1.0, feed_dict)
 
             # Update loss
             dev_epoch_loss_val = tf.get_default_graph().get_tensor_by_name('Logging/dev_epoch_loss_val:0')
