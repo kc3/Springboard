@@ -120,6 +120,13 @@ class RNTN(BaseEstimator, ClassifierMixin):
         logging.info('Model RNTN fit() called on {0} training samples.'.format(x.shape[0]))
         x = x[:, 0]
 
+        # Set the annealing rate for decreasing learning rate for higher epochs
+        annealing_rate = 0.9
+
+        # Early stopping threshold
+        early_stop_threshold = 3
+        num_bad_epochs = 0
+
         #
         # Set model name based on parameters
         # This is called here as parameters might be modified outside init using BaseEstimator set_params()
@@ -127,6 +134,9 @@ class RNTN(BaseEstimator, ClassifierMixin):
         #
         if not self.model_name:
             self.model_name = self._build_model_name(len(x))
+
+        curr_training_rate = self.training_rate
+        prev_total_loss = 0.
 
         #
         # Checks needed for using check_estimator() test.
@@ -246,7 +256,7 @@ class RNTN(BaseEstimator, ClassifierMixin):
                     # Build optimizer graph
                     # Create optimizer
                     all_variables = set(tf.all_variables())
-                    optimization_tensor = tf.train.AdagradOptimizer(self.training_rate).minimize(weighted_loss_tensor)
+                    optimization_tensor = tf.train.AdagradOptimizer(curr_training_rate).minimize(weighted_loss_tensor)
                     # I honestly don't know how else to initialize adagrad in TensorFlow.
                     session.run(tf.initialize_variables(set(tf.all_variables()) - all_variables))
 
@@ -264,6 +274,19 @@ class RNTN(BaseEstimator, ClassifierMixin):
 
             # Log variables to tensorboard
             self._record_epoch_metrics(epoch)
+
+            # Decrease learning rate if less than previous epoch
+            if epoch > 0 and total_loss > prev_total_loss:
+                curr_training_rate = curr_training_rate * annealing_rate
+                logging.info('Updated Current training rate to {0}'.format(curr_training_rate))
+                num_bad_epochs += 1
+                if num_bad_epochs >= early_stop_threshold:
+                    logging.info('Stopping runs at epoch {0}'.format(epoch))
+                    break
+            else:
+                num_bad_epochs = 0
+
+            prev_total_loss = total_loss
 
         logging.info('Model {0} Training Complete.'.format(self.model_name))
 
