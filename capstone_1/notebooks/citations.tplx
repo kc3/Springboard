@@ -1,0 +1,18 @@
+((*- extends 'article.tplx' -*))
+
+((* block title *))
+\title{Capstone 1 Data Wrangling Report}
+((* endblock title *))
+
+((* block author *))
+\author{Kapil Chiravarambath}
+((* endblock author *))
+
+((* block data *))
+\date{}
+((* endblock data *))
+
+((* block bibliography *))
+\bibliographystyle{plain}
+\bibliography{../references/references}
+((* endblock bibliography *))
