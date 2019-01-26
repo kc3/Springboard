@@ -198,16 +198,27 @@ class RNTN(BaseEstimator, ClassifierMixin):
                     epoch_loss = loss_tensor.eval(feed_dict)
                     logging.info('Training Loss before balancing = {0}'.format(epoch_loss))
 
-                    # Update training loss
+                    # Weights found by manual exploration of all nodes in the graph
+                    weights = tf.get_default_graph().get_tensor_by_name('Inputs/weight:0')
+
+                    # Balanced Loss tensor
+                    weighted_loss_tensor = self._build_loss_graph(labels, logits, self.label_size,
+                                                         self._regularization_l2_func(self.regularization_rate),
+                                                         weights, feed_dict)
+
+                    weighted_epoch_loss = weighted_loss_tensor.eval(feed_dict)
+                    logging.info('Training Loss after balancing = {0}'.format(weighted_epoch_loss))
+                    total_loss += weighted_epoch_loss
+
+                    # Update training loss with the weighted loss
                     train_epoch_loss_val = tf.get_default_graph().get_tensor_by_name('Logging/train_epoch_loss_val:0')
                     if start_idx == 0:
                         # Reset total loss for start of every epoch
-                        train_epoch_loss_val = tf.assign(train_epoch_loss_val, loss_tensor)
+                        train_epoch_loss_val = tf.assign(train_epoch_loss_val, weighted_loss_tensor)
                     else:
                         # Update total loss
-                        train_epoch_loss_val = tf.assign_add(train_epoch_loss_val, loss_tensor)
+                        train_epoch_loss_val = tf.assign_add(train_epoch_loss_val, weighted_loss_tensor)
 
-                    total_loss += epoch_loss
                     logging.debug('Updated total training loss: {0}'.format(train_epoch_loss_val.eval(feed_dict)))
 
                     # Update training accuracy
@@ -242,16 +253,6 @@ class RNTN(BaseEstimator, ClassifierMixin):
                         train_epoch_cum_sum_logits.eval(feed_dict)))
                     logging.info('Updated total training accuracy: {0}'.format(
                         train_epoch_accuracy_val.eval(feed_dict)))
-
-                    # Weights found by manual exploration of all nodes in the graph
-                    weights = tf.get_default_graph().get_tensor_by_name('Inputs/weight:0')
-
-                    # Balanced Loss tensor
-                    weighted_loss_tensor = self._build_loss_graph(labels, logits, self.label_size,
-                                                         self._regularization_l2_func(self.regularization_rate),
-                                                         weights, feed_dict)
-
-                    logging.info('Training Loss after balancing = {0}'.format(weighted_loss_tensor.eval(feed_dict)))
 
                     # Build optimizer graph
                     # Create optimizer
