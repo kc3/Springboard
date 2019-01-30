@@ -717,7 +717,7 @@ class RNTN(BaseEstimator, ClassifierMixin):
         """
 
         # Exclude labels with value 2 while computing loss.
-        # This is needed to get around class imbalance problem.
+        # This is needed for SST-2 prediction.
         #idx = tf.where(tf.less(labels, 2))
         #labels_chosen = tf.gather(labels, idx)
         #logits_chosen = tf.gather(logits, idx)
@@ -727,8 +727,10 @@ class RNTN(BaseEstimator, ClassifierMixin):
         labels_no_grad = tf.stop_gradient(labels_encoded)
 
         # Get Cross Entropy Loss
-        cross_entropy_loss = tf.losses.softmax_cross_entropy(labels_no_grad, logits, weights=weights)
-        #cross_entropy_loss = tf.reduce_sum(cross_entropy)
+        cross_entropy_loss = tf.losses.softmax_cross_entropy(labels_no_grad,
+                                                             logits,
+                                                             weights=weights,
+                                                             reduction=tf.losses.Reduction.SUM)
         logging.info('Cross Entropy Loss: {0}'.format(cross_entropy_loss.eval(feed_dict)))
 
         # Get Regularization Loss for weight terms excluding biases
@@ -835,7 +837,7 @@ class RNTN(BaseEstimator, ClassifierMixin):
 
         logging.debug('Processing tree: {0}'.format(tree.text()))
 
-        weights = [124.26106195, 18.01347017, 1., 12.18457133, 52.02482401]
+        weights = [7.59713761e-04, 1.10131693e-04, 6.11385215e-06, 7.44946677e-05, 3.18072082e-04]
 
         # Flatten tree into a list using a stack
         nodes_dict = OrderedDict()
@@ -1137,10 +1139,13 @@ class RNTN(BaseEstimator, ClassifierMixin):
             #root_logits = tf.gather(logits, root_indices)
             #root_labels = tf.gather(labels, root_indices)
 
+            # Get weights
+            weights = tf.get_default_graph().get_tensor_by_name('Inputs/weight:0')
+
             # Build loss graph
             loss_tensor = self._build_loss_graph(labels, logits, self.label_size,
                                                  self._regularization_l2_func(self.regularization_rate),
-                                                 1.0, feed_dict)
+                                                 weights, feed_dict)
 
             # Update loss
             dev_epoch_loss_val = tf.get_default_graph().get_tensor_by_name('Logging/dev_epoch_loss_val:0')

@@ -13,7 +13,8 @@ import random
 from src.models.rntn import RNTN
 from src.models.data_manager import DataManager
 import tensorflow as tf
-
+#from imblearn.tensorflow import balanced_batch_generator
+from collections import Counter
 
 class TestRNTN(object):
 
@@ -91,3 +92,22 @@ class TestRNTN(object):
             r._build_vocabulary(x[:, 0])
             t = r.get_word(-1)
             assert t is not None
+
+    def test_over_sampler(self):
+        data_mgr = DataManager()
+
+        def foo(node):
+            if node.isLeaf:
+                r = np.zeros(5)
+                r[node.label] = 1
+                return r
+            else:
+                return foo(node.left) + foo(node.right)
+
+        x = data_mgr.x_train
+        y = np.zeros(5)
+        for i in range(len(x)):
+            y += foo(x[i].root)
+        z = np.max(y)
+        s = np.sum(y)
+        print(np.ones(5)*z/(y*s))

@@ -24,8 +24,9 @@ release `here <https://nlp.stanford.edu/sentiment>`__.
 Parsing Sentiment Tree
 ~~~~~~~~~~~~~~~~~~~~~~
 
-A typical training sample looks like this: > (3 (2 But) (3 (2 he) (3 (2
-somehow) (3 (3 (2 (2 pulls) (2 it)) (1 off)) (2 .)))))
+A typical training sample looks like this:
+
+> (3 (2 But) (3 (2 he) (3 (2 somehow) (3 (3 (2 (2 pulls) (2 it)) (1 off)) (2 .)))))
 
 One of the main checks on the first examination of data was to make sure
 that all trees could be parsed into properly formed trees. The tree

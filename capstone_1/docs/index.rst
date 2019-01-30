@@ -12,8 +12,11 @@ Contents:
    :maxdepth: 2
 
    getting-started
-   commands
+   ProjectProposal
    DataWrangling
+   StoryTelling
+   Inference
+   ModelDescription
 
 
 
