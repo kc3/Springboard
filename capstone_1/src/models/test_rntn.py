@@ -111,3 +111,63 @@ class TestRNTN(object):
         z = np.max(y)
         s = np.sum(y)
         print(np.ones(5)*z/(y*s))
+
+    def test_export_model(self):
+        data_mgr = DataManager()
+        x = np.asarray(data_mgr.x_train[0:100]).reshape(-1, 1)
+        r = RNTN(model_name='test-export')
+        r.fit(x, None)
+        #r._load_vocabulary()
+
+        save_dir = r._get_save_dir()
+        L = np.load('{0}/L.npy'.format(save_dir))
+        assert L.shape == (r.embedding_size, len(r.vocabulary_))
+
+        W = np.load('{0}/W.npy'.format(save_dir))
+        assert W.shape == (r.embedding_size, r.embedding_size*2)
+
+        b = np.load('{0}/b.npy'.format(save_dir))
+        assert b.shape == (r.embedding_size, 1)
+
+        U = np.load('{0}/U.npy'.format(save_dir))
+        assert U.shape == (r.embedding_size, r.label_size)
+
+        bs = np.load('{0}/bs.npy'.format(save_dir))
+        assert bs.shape == (r.label_size, 1)
+
+        T_s = np.load('{0}/T.npy'.format(save_dir))
+        T = T_s.reshape(r.embedding_size*2, r.embedding_size*2, r.embedding_size)
+        vocab = r.vocabulary_
+
+        word_1 = list(vocab.keys())[0]
+        print('Got word: {0}'.format(word_1))
+        good_embed = L[:, vocab[word_1]]
+        print('Good word: {0}'.format(good_embed))
+        print('mul shape: {0}'.format(np.matmul(np.transpose(U), good_embed)))
+        print('bs: {0}',format(bs))
+        good_class = np.matmul(np.transpose(U), good_embed) + bs.reshape(-1)
+        print('Good logit: {0}, class: {1}'.format(good_class, np.argmax(good_class)))
+
+        word_2 = list(vocab.keys())[1]
+        print('Got word: {0}'.format(word_2))
+        movie_embed = L[:, vocab[word_2]]
+        print('Movie word: {0}'.format(movie_embed))
+        movie_class = np.matmul(np.transpose(U), movie_embed) + bs.reshape(-1)
+        print('Movie logit: {0}, class: {1}'.format(movie_class, np.argmax(movie_class)))
+
+        X = np.concatenate([good_embed, movie_embed])
+        print('Combined vector: {0}'.format(X))
+
+        zs = np.matmul(W, X) + b.reshape(-1)
+        print('zs: {0}'.format(zs))
+
+        zd = np.zeros([r.embedding_size])
+        for i in range(r.embedding_size):
+            T_i = T[:, :, i]
+            zd[i] = np.matmul(np.matmul(np.transpose(X), T_i), X)
+        print('zd: {0}'.format(zd))
+
+        a = np.tanh(zs + zd)
+        print('a: {0}'.format(a))
+        a_class = np.matmul(np.transpose(U), a) + bs.reshape(-1)
+        print('Combined logit: {0}, class: {1}'.format(a_class, np.argmax(a_class)))

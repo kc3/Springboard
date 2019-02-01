@@ -406,7 +406,7 @@ class RNTN(BaseEstimator, ClassifierMixin):
             b: bias term for the node of shape [d, 1]
             U: Weights to be computed by model for Projection Step of shape [d, label_size] where label_size
                 is the number of classes.
-            bs: Bias term for Projection Step of shape [1, label_size]
+            bs: Bias term for Projection Step of shape [label_size, 1]
 
         The following variables are built for each training case outside this function.
             f: Non-linear function specifying the compositionality of the classifier. Relu in this case.
@@ -1042,6 +1042,36 @@ class RNTN(BaseEstimator, ClassifierMixin):
         save_path = self._get_model_save_path()
         saver.save(session, save_path)
 
+        # Export model for non-tensorflow use
+        self._export_model(session)
+
+    def _export_model(self, session):
+        """ Exports a model for non-tensorflow use.
+
+        :param session:
+            Valid session object
+        :return:
+            None
+        """
+        # Get Embeddings and Weights
+        L = tf.get_default_graph().get_tensor_by_name('Embeddings/L:0')
+        W = tf.get_default_graph().get_tensor_by_name('Composition/W:0')
+        b = tf.get_default_graph().get_tensor_by_name('Composition/b:0')
+        T = tf.get_default_graph().get_tensor_by_name('Composition/T:0')
+        U = tf.get_default_graph().get_tensor_by_name('Projection/U:0')
+        bs = tf.get_default_graph().get_tensor_by_name('Projection/bs:0')
+        T_s = tf.reshape(T, [self.embedding_size*2, self.embedding_size*2*self.embedding_size])
+
+        L_v, W_v, b_v, T_v, U_v, bs_v = session.run([L, W, b, T_s, U, bs])
+
+        save_dir_path = self._get_save_dir()
+        np.save('{0}/L.npy'.format(save_dir_path), L_v)
+        np.save('{0}/W.npy'.format(save_dir_path), W_v)
+        np.save('{0}/b.npy'.format(save_dir_path), b_v)
+        np.save('{0}/U.npy'.format(save_dir_path), U_v)
+        np.save('{0}/bs.npy'.format(save_dir_path), bs_v)
+        np.save('{0}/T.npy'.format(save_dir_path), T_v)
+
     def predict_proba_full_tree(self, x):
         """ Computes the prediction for each node in the tree.
 
@@ -1084,6 +1114,72 @@ class RNTN(BaseEstimator, ClassifierMixin):
             y_prob = y.eval(feed_dict)
 
         logging.info('Model RNTN predict_full_tree() returned.')
+        return y_prob
+
+    def predict_proba_full_tree_notf(self, x):
+        """ Computes the prediction for each node in the tree without using tensorflow.
+
+        :param x:
+            An 2d ndarray where each element is a tree.
+        :return y_prob:
+            Softmax probabilities of each class for each tree node.
+        """
+
+        logging.info('Model RNTN predict_full_tree_notf() called on {0} testing samples.'.format(x.shape[0]))
+        x = x[:, 0]
+
+        # Load vocabulary
+        self._load_vocabulary()
+
+        # Get save dir
+        save_dir = self._get_save_dir()
+        L = np.load('{0}/L.npy'.format(save_dir))
+        W = np.load('{0}/W.npy'.format(save_dir))
+        b = np.load('{0}/b.npy'.format(save_dir))
+        U = np.load('{0}/U.npy'.format(save_dir))
+        bs = np.load('{0}/bs.npy'.format(save_dir))
+
+        T_s = np.load('{0}/T.npy'.format(save_dir))
+        T = T_s.reshape(self.embedding_size*2, self.embedding_size*2, self.embedding_size)
+
+        y_prob = []
+
+        for tree in range(len(x)):
+            # Build tree dict
+            tree_dict = self._tree_feed_data(x[tree], 0)
+
+            # Get word vectors
+            word_vecs = np.zeros([self.embedding_size, len(tree_dict['label'])])
+
+            def get_word_vec(idx):
+                if tree_dict['is_leaf'][idx]:
+                    # return word embedding
+                    word_vecs[:, idx] = L[:, tree_dict['word_index'][idx]]
+                else:
+                    # compose
+                    left_v = word_vecs[:, tree_dict['left_child'][idx]]
+                    right_v = word_vecs[:, tree_dict['right_child'][idx]]
+                    X = np.concatenate([left_v, right_v])
+                    zs = np.matmul(W, X) + b.reshape(-1)
+                    zd = np.zeros([self.embedding_size])
+                    for i in range(self.embedding_size):
+                        T_i = T[:, :, i]
+                        zd[i] = np.matmul(np.matmul(np.transpose(X), T_i), X)
+                    a = zs + zd
+                    word_vecs[:, idx] = np.tanh(a)
+
+            # Get logits
+            logits = np.zeros([len(tree_dict['label']), self.label_size])
+            for node in range(len(tree_dict['label'])):
+                get_word_vec(node)
+                projection = np.matmul(np.transpose(U), word_vecs[:, node]) + bs.reshape(-1)
+                logits[node, :] = np.transpose(projection)
+
+            # Get softmax and then predictions
+            y_prob_tree = [np.exp(logit) / sum(np.exp(logit)) for logit in logits]
+            y_prob.extend(y_prob_tree)
+
+        logging.info('Model RNTN predict_proba_full_tree_notf() returned.')
         return y_prob
 
     def _predict_from_logits(self, logits):
@@ -1175,4 +1271,3 @@ class RNTN(BaseEstimator, ClassifierMixin):
             # Write the current training status to the log files
             training_writer.add_summary(summary, epoch)
             logging.info('Model RNTN _record_epoch_metrics() returned.')
-

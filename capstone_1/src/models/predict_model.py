@@ -37,7 +37,7 @@ def predict_model(x, model_name='RNTN_30_tanh_35_5_None_10_0.01_0.001_8544'):
 
     # Get predictions
     r = RNTN(model_name=model_name, num_epochs=2)
-    y_pred = r.predict_proba_full_tree(trees)
+    y_pred = r.predict_proba_full_tree_notf(trees)
     y = np.argmax(y_pred[-1])
     logging.info('probabilities: {0}'.format(y_pred))
 
