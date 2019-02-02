@@ -12,6 +12,7 @@ import joblib
 import logging
 import os
 import numpy as np
+import pandas as pd
 from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.metrics import make_scorer, log_loss
 from sklearn.preprocessing import OneHotEncoder
@@ -837,8 +838,6 @@ class RNTN(BaseEstimator, ClassifierMixin):
 
         logging.debug('Processing tree: {0}'.format(tree.text()))
 
-        weights = [7.59713761e-04, 1.10131693e-04, 6.11385215e-06, 7.44946677e-05, 3.18072082e-04]
-
         # Flatten tree into a list using a stack
         nodes_dict = OrderedDict()
         nodes = []
@@ -863,7 +862,7 @@ class RNTN(BaseEstimator, ClassifierMixin):
             'right_child': [nodes_dict[node.right]+start_idx if not node.isLeaf else -1 for node in nodes],
             'label': [node.label for node in nodes],
             'is_root': [True if i == len(nodes)-1 else False for i in range(len(nodes))],
-            'weight': [weights[node.label] for node in nodes]
+            'weight': self._get_tree_weights(tree)
         }
 
         # checks
@@ -886,6 +885,44 @@ class RNTN(BaseEstimator, ClassifierMixin):
                 assert not feed_dict['is_root'][i]
 
         return feed_dict
+
+    def _get_tree_weights(self, tree):
+        """ Get weights scaled by height for a tree.
+
+        :param tree:
+            Tree to parse.
+        :return:
+            Array of weights for the nodes.
+        """
+        nodes = []
+        stack = [(0, tree.root)]
+
+        while stack:
+            height, node = stack.pop()
+            if not node.isLeaf:
+                stack.append((height + 1, node.left))
+                stack.append((height + 1, node.right))
+            # Insert at zero or if using append reverse to ensure children come before parent.
+            nodes.insert(0, (height, node.label))
+
+        max_h = np.max([h for h, l in nodes])
+        return [self._get_weight_by_height(max_h - h, l) for h, l in nodes]
+
+    @staticmethod
+    def _get_weight_by_height(height, label):
+        """ Gets weight for the given node according to height and class.
+
+        :param height:
+            Tri-gram length of the node.
+        :param label:
+            Label of the node.
+        :return:
+            A float representing the weight value.
+        """
+        # Reads weight dataframe
+        weights_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '../data/processed/weights.csv')
+        dt_weights = pd.read_csv(weights_path)
+        return dt_weights.loc[height]['weight_{0}'.format(label)]
 
     def _build_model_name(self, num_samples):
         """ Builds model name for persistence and retrieval based on model parameters.

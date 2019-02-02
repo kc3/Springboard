@@ -4,22 +4,16 @@
 # Tests for training and evaluation of RNTN models.
 #
 
-
+import math
 import numpy as np
-import pytest
 import random
 # from sklearn.utils.estimator_checks import check_estimator
-#from src.models import train_model
+from src.features.tree import Tree
 from src.models.rntn import RNTN
 from src.models.data_manager import DataManager
 import tensorflow as tf
-#from imblearn.tensorflow import balanced_batch_generator
-from collections import Counter
 
 class TestRNTN(object):
-
-    #def __init__(self):
-    #    self.data_mgr = DataManager()
 
     # This test is failing type checks due to tree data structure. Enable once fixed.
     #def test_rntn_estimator(self):
@@ -117,7 +111,6 @@ class TestRNTN(object):
         x = np.asarray(data_mgr.x_train[0:100]).reshape(-1, 1)
         r = RNTN(model_name='test-export')
         r.fit(x, None)
-        #r._load_vocabulary()
 
         save_dir = r._get_save_dir()
         L = np.load('{0}/L.npy'.format(save_dir))
@@ -171,3 +164,15 @@ class TestRNTN(object):
         print('a: {0}'.format(a))
         a_class = np.matmul(np.transpose(U), a) + bs.reshape(-1)
         print('Combined logit: {0}, class: {1}'.format(a_class, np.argmax(a_class)))
+
+    def test_get_weights(self):
+        r = RNTN()
+        w = r._get_weight_by_height(0, 0)
+        assert(w == 124.26106194690266)
+
+        txt = "(2 (3 (3 Effective) (2 but)) (1 (1 too-tepid) (2 biopic)))"
+        tree = Tree(txt)
+        w = r._get_tree_weights(tree)
+        exp_w = [12.184571329399514, 1.0, 5.018175209014904, 18.01347017318794, 1.0, 7.283038776048536, 1.0]
+        cmp_w = [math.isclose(w[i], exp_w[i]) for i in range(len(w))]
+        assert all(cmp_w)

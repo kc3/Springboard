@@ -4,7 +4,6 @@
 # Tests for training and evaluation of all models.
 #
 
-import pytest
 # from sklearn.utils.estimator_checks import check_estimator
 from src.models import train_model
 from src.models.predict_model import predict_model, convert_text_tree
@@ -29,9 +28,3 @@ class TestModel(object):
         x = 'But he somehow pulls it off .'
         y = convert_text_tree(x)
         assert y == '(2 (2 But) (2 (2 he) (2 (2 somehow) (2 (2 (2 pulls) (2 (2 it) (2 off))) (2 .)))))'
-
-    #def test_rnn(self):
-    #    pass
-
-    #def test_mv_rnn(self):
-    #    pass
