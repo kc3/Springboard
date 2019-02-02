@@ -1225,6 +1225,23 @@ class RNTN(BaseEstimator, ClassifierMixin):
         logging.info('Model RNTN predict_proba_full_tree_notf() returned.')
         return y_prob
 
+    def get_word_embeddings(self):
+        """ Returns all word embeddings and dictionary to find them.
+
+        :return:
+            A numpy 2D array [embedding_size, vocabulary] containing embeddings and
+            A dictionary containing the mapping from words to column number of the embedding in the array.
+        """
+
+        # Load vocabulary
+        self._load_vocabulary()
+
+        # Get save dir
+        save_dir = self._get_save_dir()
+        L = np.load('{0}/L.npy'.format(save_dir))
+
+        return L, self.vocabulary_
+
     def _predict_from_logits(self, logits):
         """ Returns a tensor that makes predictions from logits.
 
