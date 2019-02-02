@@ -46,7 +46,12 @@ def train_rntn(model_name=None, num_samples=None, params=None):
     clf = RNTN(model_name=model_name)
 
     if params is None:
-        params = {'num_epochs': [30], 'training_rate': [0.001]}
+        params = {
+            'num_epochs': [30],
+            'training_rate': [0.01],
+            'regularization_rate': [0.01],
+            'embedding_size': [35]
+        }
 
     score_func = clf.loss()
     if num_samples is None:

@@ -91,20 +91,19 @@ class TestRNTN(object):
         data_mgr = DataManager()
 
         def foo(node):
+            r = np.zeros(5)
+            r[node.label] = 1
             if node.isLeaf:
-                r = np.zeros(5)
-                r[node.label] = 1
                 return r
             else:
-                return foo(node.left) + foo(node.right)
+                return foo(node.left) + foo(node.right) + r
 
         x = data_mgr.x_train
         y = np.zeros(5)
         for i in range(len(x)):
             y += foo(x[i].root)
         z = np.max(y)
-        s = np.sum(y)
-        print(np.ones(5)*z/(y*s))
+        print(np.ones(5)*z/(y))
 
     def test_export_model(self):
         data_mgr = DataManager()

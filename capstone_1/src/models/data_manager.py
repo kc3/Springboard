@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 
+import os
 from sklearn.feature_extraction.text import CountVectorizer
 from src.features.tree import Tree
 
@@ -12,9 +13,11 @@ from src.features.tree import Tree
 class DataManager:
     """Load interim data for trees as strings."""
 
-    _def_trees_path = './src/data/interim/trainDevTestTrees_PTB/trees/'
+    _abs_path = os.path.abspath(os.path.dirname(__file__))
 
-    def_models_path = './models/'
+    _def_trees_path = os.path.join(_abs_path, '../data/interim/trainDevTestTrees_PTB/trees/')
+
+    def_models_path = os.path.join(_abs_path, '../../models/')
 
     __instance = None
 

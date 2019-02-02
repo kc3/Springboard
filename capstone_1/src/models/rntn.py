@@ -24,8 +24,9 @@ import tensorflow as tf
 #
 # Configure logging
 #
-
-logging.basicConfig(filename='./logs/run-{0}.log'.format(datetime.now().strftime('%Y%m%d-%H%M%S')),
+abs_path = os.path.abspath(os.path.dirname(__file__))
+log_path = os.path.join(abs_path, '../../logs/run-{0}.log')
+logging.basicConfig(filename=log_path.format(datetime.now().strftime('%Y%m%d-%H%M%S')),
                     level=logging.INFO,
                     format='%(asctime)s-%(process)d-%(name)s-%(levelname)s-%(message)s',
                     datefmt='%Y-%m-%d %H:%M:%S')
@@ -126,6 +127,8 @@ class RNTN(BaseEstimator, ClassifierMixin):
 
         # Early stopping threshold
         early_stop_threshold = 3
+
+        # Stop after loss has not decreased for..
         num_bad_epochs = 0
 
         #
@@ -190,9 +193,10 @@ class RNTN(BaseEstimator, ClassifierMixin):
                     #root_labels = tf.gather(labels, root_indices)
 
                     # Build loss graph
+                    weights_ones = tf.ones_like(labels, dtype=tf.float32)
                     loss_tensor = self._build_loss_graph(labels, logits, self.label_size,
                                                          self._regularization_l2_func(self.regularization_rate),
-                                                         1.0, feed_dict)
+                                                         weights_ones, feed_dict)
 
                     # Loss
                     # Invoke the graph for loss function with this feed dict.
@@ -277,14 +281,15 @@ class RNTN(BaseEstimator, ClassifierMixin):
             # Log variables to tensorboard
             self._record_epoch_metrics(epoch)
 
-            # Decrease learning rate if less than previous epoch
+            # Check if loss is decreasing
             if epoch > 0 and total_loss > prev_total_loss:
-                curr_training_rate = curr_training_rate * annealing_rate
-                logging.info('Updated Current training rate to {0}'.format(curr_training_rate))
                 num_bad_epochs += 1
                 if num_bad_epochs >= early_stop_threshold:
                     logging.info('Stopping runs at epoch {0}'.format(epoch))
                     break
+
+                curr_training_rate = curr_training_rate * annealing_rate
+                logging.info('Updated Current training rate to {0}'.format(curr_training_rate))
             else:
                 num_bad_epochs = 0
 
@@ -728,10 +733,11 @@ class RNTN(BaseEstimator, ClassifierMixin):
         labels_no_grad = tf.stop_gradient(labels_encoded)
 
         # Get Cross Entropy Loss
-        cross_entropy_loss = tf.losses.softmax_cross_entropy(labels_no_grad,
+        cross_entropy = tf.losses.softmax_cross_entropy(labels_no_grad,
                                                              logits,
                                                              weights=weights,
                                                              reduction=tf.losses.Reduction.SUM)
+        cross_entropy_loss = tf.divide(cross_entropy, tf.reduce_sum(weights))
         logging.info('Cross Entropy Loss: {0}'.format(cross_entropy_loss.eval(feed_dict)))
 
         # Get Regularization Loss for weight terms excluding biases
