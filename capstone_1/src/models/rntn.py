@@ -140,7 +140,7 @@ class RNTN(BaseEstimator, ClassifierMixin):
             self.model_name = self._build_model_name(len(x))
 
         curr_training_rate = self.training_rate
-        prev_total_loss = 0.
+        prev_dev_loss = 0.
 
         #
         # Checks needed for using check_estimator() test.
@@ -279,10 +279,10 @@ class RNTN(BaseEstimator, ClassifierMixin):
             logging.info('Total Training Loss: {0} for epoch {1}'.format(total_loss, epoch))
 
             # Log variables to tensorboard
-            self._record_epoch_metrics(epoch)
+            dev_loss = self._record_epoch_metrics(epoch)
 
             # Check if loss is decreasing
-            if epoch > 0 and total_loss > prev_total_loss:
+            if epoch > 0 and dev_loss > prev_dev_loss:
                 num_bad_epochs += 1
                 if num_bad_epochs >= early_stop_threshold:
                     logging.info('Stopping runs at epoch {0}'.format(epoch))
@@ -293,7 +293,7 @@ class RNTN(BaseEstimator, ClassifierMixin):
             else:
                 num_bad_epochs = 0
 
-            prev_total_loss = total_loss
+            prev_dev_loss = dev_loss
 
         logging.info('Model {0} Training Complete.'.format(self.model_name))
 
@@ -734,9 +734,9 @@ class RNTN(BaseEstimator, ClassifierMixin):
 
         # Get Cross Entropy Loss
         cross_entropy = tf.losses.softmax_cross_entropy(labels_no_grad,
-                                                             logits,
-                                                             weights=weights,
-                                                             reduction=tf.losses.Reduction.SUM)
+                                                        logits,
+                                                        weights=weights,
+                                                        reduction=tf.losses.Reduction.SUM)
         cross_entropy_loss = tf.divide(cross_entropy, tf.reduce_sum(weights))
         logging.info('Cross Entropy Loss: {0}'.format(cross_entropy_loss.eval(feed_dict)))
 
@@ -1289,7 +1289,8 @@ class RNTN(BaseEstimator, ClassifierMixin):
             # Update loss
             dev_epoch_loss_val = tf.get_default_graph().get_tensor_by_name('Logging/dev_epoch_loss_val:0')
             dev_epoch_loss_val = tf.assign(dev_epoch_loss_val, loss_tensor)
-            logging.info('Cross Validation Loss after optimization = {0}'.format(dev_epoch_loss_val.eval(feed_dict)))
+            rec_loss_val = dev_epoch_loss_val.eval(feed_dict)
+            logging.info('Cross Validation Loss after optimization = {0}'.format(rec_loss_val))
 
             # Get predictions for the tensors.
             y_pred = self._predict_from_logits(logits)
@@ -1314,3 +1315,4 @@ class RNTN(BaseEstimator, ClassifierMixin):
             # Write the current training status to the log files
             training_writer.add_summary(summary, epoch)
             logging.info('Model RNTN _record_epoch_metrics() returned.')
+            return rec_loss_val
