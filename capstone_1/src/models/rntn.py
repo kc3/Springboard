@@ -689,7 +689,7 @@ class RNTN(BaseEstimator, ClassifierMixin):
     def _max_margin_loss(self, labels, logits, weights, feed_dict):
         """ Builds loss function graph.
 
-        Computes the cross entropy loss for sentiment prediction values.
+        Computes the max margin loss for sentiment prediction values.
 
         :param labels:
             Ground truth labels.
@@ -701,21 +701,22 @@ class RNTN(BaseEstimator, ClassifierMixin):
             Loss tensor for the whole network.
         """
 
-        cross_entropy_loss = self._cross_entropy_loss(labels, logits, weights)
-        logging.info('Cross Entropy Loss: {0}'.format(tf.reduce_sum(cross_entropy_loss).eval(feed_dict)))
+        probabilities = tf.nn.softmax(logits)
+        pos_score = tf.gather(probabilities, labels, axis=1)
+        logging.info('Pos Score: {0}'.format(tf.reduce_sum(pos_score).eval(feed_dict)))
 
         bad_labels_1 = tf.random_uniform(tf.shape(labels), 0, self.label_size, dtype=tf.int32)
-        bad_cross_entropy_loss_1 = self._cross_entropy_loss(bad_labels_1, logits, weights)
+        neg_score_1 = tf.gather(probabilities, bad_labels_1, axis=1)
 
         bad_labels_2 = tf.random_uniform(tf.shape(labels), 0, self.label_size, dtype=tf.int32)
-        bad_cross_entropy_loss_2 = self._cross_entropy_loss(bad_labels_2, logits, weights)
+        neg_score_2 = tf.gather(probabilities, bad_labels_2, axis=1)
 
-        bad_cross_entropy_loss = tf.add(bad_cross_entropy_loss_1, bad_cross_entropy_loss_2)
-        logging.info('Bad Cross Entropy Loss: {0}'.format(tf.reduce_sum(bad_cross_entropy_loss).eval(feed_dict)))
+        neg_score = tf.add(neg_score_1, neg_score_2)
+        logging.info('Neg Score: {0}'.format(tf.reduce_sum(neg_score).eval(feed_dict)))
 
         # Max Margin loss
-        total_cross_entropy_loss = tf.add(1., tf.subtract(bad_cross_entropy_loss, cross_entropy_loss))
-        max_margin_loss = tf.reduce_sum(tf.maximum(0., total_cross_entropy_loss))
+        total_score = tf.multiply(tf.add(1., tf.subtract(neg_score, pos_score)), weights)
+        max_margin_loss = tf.reduce_sum(tf.maximum(0., total_score))
         logging.info('Max Margin Loss: {0}'.format(tf.reduce_sum(max_margin_loss).eval(feed_dict)))
         mean_loss = tf.divide(max_margin_loss, tf.reduce_sum(weights))
 
