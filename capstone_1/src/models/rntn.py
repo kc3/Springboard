@@ -189,7 +189,8 @@ class RNTN(BaseEstimator, ClassifierMixin):
                     logits = self._build_batch_graph(self.get_word, self._get_compose_func())
 
                     # Weights found by manual exploration of all nodes in the graph
-                    weights = tf.get_default_graph().get_tensor_by_name('Inputs/weight:0')
+                    # weights = tf.get_default_graph().get_tensor_by_name('Inputs/weight:0')
+                    weights = tf.ones_like(labels, dtype=tf.float32)
 
                     # Balanced Loss tensor
                     weighted_loss_tensor = self._max_margin_loss(labels, logits, weights, feed_dict)
@@ -701,27 +702,32 @@ class RNTN(BaseEstimator, ClassifierMixin):
         """
 
         cross_entropy_loss = self._cross_entropy_loss(labels, logits, weights)
-        logging.info('Cross Entropy Loss: {0}'.format(cross_entropy_loss.eval(feed_dict)))
+        logging.info('Cross Entropy Loss: {0}'.format(tf.reduce_sum(cross_entropy_loss).eval(feed_dict)))
 
-        bad_labels = tf.random_uniform(tf.shape(labels), 0, self.label_size, dtype=tf.int32)
-        bad_cross_entropy_loss = self._cross_entropy_loss(bad_labels, logits, weights)
-        logging.info('Bad Cross Entropy Loss: {0}'.format(bad_cross_entropy_loss.eval(feed_dict)))
+        bad_labels_1 = tf.random_uniform(tf.shape(labels), 0, self.label_size, dtype=tf.int32)
+        bad_cross_entropy_loss_1 = self._cross_entropy_loss(bad_labels_1, logits, weights)
+
+        bad_labels_2 = tf.random_uniform(tf.shape(labels), 0, self.label_size, dtype=tf.int32)
+        bad_cross_entropy_loss_2 = self._cross_entropy_loss(bad_labels_2, logits, weights)
+
+        bad_cross_entropy_loss = tf.add(bad_cross_entropy_loss_1, bad_cross_entropy_loss_2)
+        logging.info('Bad Cross Entropy Loss: {0}'.format(tf.reduce_sum(bad_cross_entropy_loss).eval(feed_dict)))
 
         # Max Margin loss
         total_cross_entropy_loss = tf.add(1., tf.subtract(bad_cross_entropy_loss, cross_entropy_loss))
-        max_margin_loss = tf.maximum(0., total_cross_entropy_loss)
+        max_margin_loss = tf.reduce_sum(tf.maximum(0., total_cross_entropy_loss))
+        logging.info('Max Margin Loss: {0}'.format(tf.reduce_sum(max_margin_loss).eval(feed_dict)))
+        mean_loss = tf.divide(max_margin_loss, tf.reduce_sum(weights))
 
         regularization_loss = self._regularization_loss()
         logging.info('Regularization Loss: {0}'.format(regularization_loss.eval(feed_dict)))
 
         # Return Total Loss
-        total_loss = tf.add(max_margin_loss, regularization_loss)
+        total_loss = tf.add(mean_loss, regularization_loss)
         return total_loss
 
     def _build_loss_graph(self, labels, logits, weights, feed_dict):
-        """ Builds loss function graph.
-
-        Computes the cross entropy loss for sentiment prediction values.
+        """ Builds loss function graph for cross-validation.
 
         :param labels:
             Ground truth labels.
@@ -735,27 +741,37 @@ class RNTN(BaseEstimator, ClassifierMixin):
 
         # Exclude labels with value 2 while computing loss.
         # This is needed for SST-2 prediction.
-        #idx = tf.where(tf.less(labels, 2))
-        #labels_chosen = tf.gather(labels, idx)
-        #logits_chosen = tf.gather(logits, idx)
+        # idx = tf.where(tf.less(labels, 2))
+        # labels_chosen = tf.gather(labels, idx)
+        # logits_chosen = tf.gather(logits, idx)
 
-        cross_entropy_loss = self._cross_entropy_loss(labels, logits, weights)
-        logging.info('Cross Entropy Loss: {0}'.format(cross_entropy_loss.eval(feed_dict)))
+        mean_loss = self._mean_cross_entropy_loss(labels, logits, weights)
+        logging.info('Mean Cross Entropy Loss: {0}'.format(mean_loss.eval(feed_dict)))
 
-        regularization_loss = self._regularization_loss()
-        logging.info('Regularization Loss: {0}'.format(regularization_loss.eval(feed_dict)))
+        # regularization_loss = self._regularization_loss()
+        # logging.info('Regularization Loss: {0}'.format(regularization_loss.eval(feed_dict)))
 
         # Return Total Loss
-        total_loss = tf.add(cross_entropy_loss, regularization_loss)
-        return total_loss
+        # total_loss = tf.add(cross_entropy_loss, regularization_loss)
+        return mean_loss
 
     def _cross_entropy_loss(self, labels, logits, weights):
-        # stop_gradient stops backprop for labels
+        # One hot encoding
         labels_encoded = tf.one_hot(labels, self.label_size)
-        labels_no_grad = tf.stop_gradient(labels_encoded)
 
         # Get Cross Entropy Loss
-        cross_entropy = tf.losses.softmax_cross_entropy(labels_no_grad,
+        cross_entropy = tf.losses.softmax_cross_entropy(labels_encoded,
+                                                        logits,
+                                                        weights=weights,
+                                                        reduction=tf.losses.Reduction.NONE)
+        return cross_entropy
+
+    def _mean_cross_entropy_loss(self, labels, logits, weights):
+        # One hot encoding
+        labels_encoded = tf.one_hot(labels, self.label_size)
+
+        # Get Cross Entropy Loss
+        cross_entropy = tf.losses.softmax_cross_entropy(labels_encoded,
                                                         logits,
                                                         weights=weights,
                                                         reduction=tf.losses.Reduction.SUM)
@@ -1287,7 +1303,7 @@ class RNTN(BaseEstimator, ClassifierMixin):
         :return:
             None.
         """
-        x_dev = DataManager().x_dev[:10]
+        x_dev = DataManager().x_dev
 
         logging.info('Model RNTN _record_epoch_metrics() called on {0} testing samples.'.format(len(x_dev)))
 
