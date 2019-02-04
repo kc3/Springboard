@@ -701,15 +701,18 @@ class RNTN(BaseEstimator, ClassifierMixin):
             Loss tensor for the whole network.
         """
 
-        probabilities = tf.nn.softmax(logits)
-        pos_score = tf.gather(probabilities, labels, axis=1)
+        probabilities = tf.squeeze(tf.nn.softmax(logits))
+        indices = tf.stack([tf.range(tf.shape(labels)[0], dtype=labels.dtype), labels], axis=1)
+        pos_score = tf.gather_nd(probabilities, indices)
         logging.info('Pos Score: {0}'.format(tf.reduce_sum(pos_score).eval(feed_dict)))
 
         bad_labels_1 = tf.random_uniform(tf.shape(labels), 0, self.label_size, dtype=tf.int32)
-        neg_score_1 = tf.gather(probabilities, bad_labels_1, axis=1)
+        indices = tf.stack([tf.range(tf.shape(bad_labels_1)[0], dtype=bad_labels_1.dtype), bad_labels_1], axis=1)
+        neg_score_1 = tf.gather_nd(probabilities, indices)
 
         bad_labels_2 = tf.random_uniform(tf.shape(labels), 0, self.label_size, dtype=tf.int32)
-        neg_score_2 = tf.gather(probabilities, bad_labels_2, axis=1)
+        indices = tf.stack([tf.range(tf.shape(bad_labels_2)[0], dtype=bad_labels_2.dtype), bad_labels_2], axis=1)
+        neg_score_2 = tf.gather_nd(probabilities, indices)
 
         neg_score = tf.add(neg_score_1, neg_score_2)
         logging.info('Neg Score: {0}'.format(tf.reduce_sum(neg_score).eval(feed_dict)))
