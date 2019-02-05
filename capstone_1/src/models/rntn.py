@@ -195,48 +195,10 @@ class RNTN(BaseEstimator, ClassifierMixin):
                     total_loss += weighted_epoch_loss
 
                     # Update training loss with the weighted loss
-                    train_epoch_loss_val = tf.get_default_graph().get_tensor_by_name('Logging/train_epoch_loss_val:0')
-                    if start_idx == 0:
-                        # Reset total loss for start of every epoch
-                        train_epoch_loss_val = tf.assign(train_epoch_loss_val, weighted_loss_tensor)
-                    else:
-                        # Update total loss
-                        train_epoch_loss_val = tf.assign_add(train_epoch_loss_val, weighted_loss_tensor)
-
-                    logging.debug('Updated total training loss: {0}'.format(train_epoch_loss_val.eval(feed_dict)))
+                    self._record_training_loss(weighted_loss_tensor, feed_dict, start_idx == 0)
 
                     # Update training accuracy
-                    train_epoch_cum_sum_logits = tf.get_default_graph()\
-                        .get_tensor_by_name('Logging/train_epoch_cum_sum_logits:0')
-                    train_epoch_accuracy_val = tf.get_default_graph()\
-                        .get_tensor_by_name('Logging/train_epoch_accuracy_val:0')
-
-                    y_pred = self._predict_from_logits(logits)
-                    labels_int = tf.cast(labels, tf.int32)
-                    curr_y_pred_sum = tf.reduce_sum(tf.cast(tf.equal(y_pred, labels_int), tf.float32))
-                    accuracy = tf.divide(curr_y_pred_sum, tf.constant(n, dtype=tf.float32))
-
-                    if start_idx == 0:
-                        # Reset total accuracy for start of every epoch
-                        train_epoch_cum_sum_logits = tf.assign(train_epoch_cum_sum_logits,
-                                                               tf.constant(n, dtype=tf.int32))
-                        train_epoch_accuracy_val = tf.assign(train_epoch_accuracy_val, accuracy)
-                    else:
-                        # Update total accuracy
-                        past_y_n = train_epoch_cum_sum_logits.eval(feed_dict)
-                        past_y_pred_sum = tf.multiply(train_epoch_accuracy_val,
-                                                      tf.constant(past_y_n, dtype=tf.float32))
-                        total_y_pred_sum = tf.add(past_y_pred_sum, curr_y_pred_sum)
-                        train_epoch_cum_sum_logits = tf.assign_add(train_epoch_cum_sum_logits,
-                                                                   tf.constant(n, dtype=tf.int32))
-                        cumulative_accuracy = tf.divide(total_y_pred_sum,
-                                                        tf.constant(past_y_n + n, dtype=tf.float32))
-                        train_epoch_accuracy_val = tf.assign(train_epoch_accuracy_val, cumulative_accuracy)
-
-                    logging.debug('Updated total sum logits: {0}'.format(
-                        train_epoch_cum_sum_logits.eval(feed_dict)))
-                    logging.info('Updated total training accuracy: {0}'.format(
-                        train_epoch_accuracy_val.eval(feed_dict)))
+                    self._record_training_accuracy(labels, logits, n, feed_dict, start_idx == 0)
 
                     # Build optimizer graph
                     # Create optimizer
@@ -1343,6 +1305,50 @@ class RNTN(BaseEstimator, ClassifierMixin):
 
         return y_pred
 
+    @staticmethod
+    def _record_training_loss(loss, feed_dict, reset=False):
+        train_epoch_loss_val = tf.get_default_graph().get_tensor_by_name('Logging/train_epoch_loss_val:0')
+        if reset:
+            # Reset total loss for start of every epoch
+            train_epoch_loss_val = tf.assign(train_epoch_loss_val, loss)
+        else:
+            # Update total loss
+            train_epoch_loss_val = tf.assign_add(train_epoch_loss_val, loss)
+        logging.info('Updated total training loss: {0}'.format(train_epoch_loss_val.eval(feed_dict)))
+
+    def _record_training_accuracy(self, labels, logits, n, feed_dict, reset=False):
+        train_epoch_cum_sum_logits = tf.get_default_graph() \
+            .get_tensor_by_name('Logging/train_epoch_cum_sum_logits:0')
+        train_epoch_accuracy_val = tf.get_default_graph() \
+            .get_tensor_by_name('Logging/train_epoch_accuracy_val:0')
+
+        y_pred = self._predict_from_logits(logits)
+        labels_int = tf.cast(labels, tf.int32)
+        curr_y_pred_sum = tf.reduce_sum(tf.cast(tf.equal(y_pred, labels_int), tf.float32))
+        accuracy = tf.divide(curr_y_pred_sum, tf.constant(n, dtype=tf.float32))
+
+        if reset:
+            # Reset total accuracy for start of every epoch
+            train_epoch_cum_sum_logits = tf.assign(train_epoch_cum_sum_logits,
+                                                   tf.constant(n, dtype=tf.int32))
+            train_epoch_accuracy_val = tf.assign(train_epoch_accuracy_val, accuracy)
+        else:
+            # Update total accuracy
+            past_y_n = train_epoch_cum_sum_logits.eval(feed_dict)
+            past_y_pred_sum = tf.multiply(train_epoch_accuracy_val,
+                                          tf.constant(past_y_n, dtype=tf.float32))
+            total_y_pred_sum = tf.add(past_y_pred_sum, curr_y_pred_sum)
+            train_epoch_cum_sum_logits = tf.assign_add(train_epoch_cum_sum_logits,
+                                                       tf.constant(n, dtype=tf.int32))
+            cumulative_accuracy = tf.divide(total_y_pred_sum,
+                                            tf.constant(past_y_n + n, dtype=tf.float32))
+            train_epoch_accuracy_val = tf.assign(train_epoch_accuracy_val, cumulative_accuracy)
+
+        logging.info('Updated total sum logits: {0}'.format(
+            train_epoch_cum_sum_logits.eval(feed_dict)))
+        logging.info('Updated total training accuracy: {0}'.format(
+            train_epoch_accuracy_val.eval(feed_dict)))
+
     def _record_epoch_metrics(self, epoch):
         """ Evaluate current epoch metrics.
 
@@ -1351,7 +1357,7 @@ class RNTN(BaseEstimator, ClassifierMixin):
         :return:
             None.
         """
-        x_dev = DataManager().x_dev[:10]
+        x_dev = DataManager().x_dev
 
         logging.info('Model RNTN _record_epoch_metrics() called on {0} testing samples.'.format(len(x_dev)))
 
