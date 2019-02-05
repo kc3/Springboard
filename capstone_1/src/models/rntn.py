@@ -122,13 +122,7 @@ class RNTN(BaseEstimator, ClassifierMixin):
         logging.info('Model RNTN fit() called on {0} training samples.'.format(x.shape[0]))
         x = x[:, 0]
 
-        # Set the annealing rate for decreasing learning rate for higher epochs
-        annealing_rate = 0.9
-
-        # Early stopping threshold
-        early_stop_threshold = 3
-
-        # Stop after loss has not decreased for..
+        # Number of bad epochs
         num_bad_epochs = 0
 
         #
@@ -193,7 +187,8 @@ class RNTN(BaseEstimator, ClassifierMixin):
                     weights = tf.ones_like(labels, dtype=tf.float32)
 
                     # Balanced Loss tensor
-                    weighted_loss_tensor = self._max_margin_loss(labels, logits, weights, feed_dict)
+                    # weighted_loss_tensor = self._max_margin_loss(labels, logits, weights, feed_dict)
+                    weighted_loss_tensor = self._balanced_cross_entropy_loss(labels, logits, weights, feed_dict)
 
                     weighted_epoch_loss = weighted_loss_tensor.eval(feed_dict)
                     logging.info('Training Loss = {0}'.format(weighted_epoch_loss))
@@ -265,18 +260,16 @@ class RNTN(BaseEstimator, ClassifierMixin):
             # Log variables to tensorboard
             dev_loss = self._record_epoch_metrics(epoch)
 
-            # Check if loss is decreasing
-            if epoch > 0 and dev_loss > prev_dev_loss:
-                num_bad_epochs += 1
-                if num_bad_epochs >= early_stop_threshold:
-                    logging.info('Stopping runs at epoch {0}'.format(epoch))
+            if epoch > 0:
+                # Change learning rate
+                curr_training_rate = self._get_learning_rate(prev_dev_loss, dev_loss, curr_training_rate)
+
+                # Check early stop
+                early_stop, num_bad_epochs = self._check_early_stop(prev_dev_loss, dev_loss, num_bad_epochs)
+                if early_stop:
                     break
 
-                curr_training_rate = curr_training_rate * annealing_rate
-                logging.info('Updated Current training rate to {0}'.format(curr_training_rate))
-            else:
-                num_bad_epochs = 0
-
+            # Update previous dev loss
             prev_dev_loss = dev_loss
 
         logging.info('Model {0} Training Complete.'.format(self.model_name))
@@ -382,6 +375,45 @@ class RNTN(BaseEstimator, ClassifierMixin):
         logging.info('Model RNTN _loss() returned {0}.'.format(loss_val))
 
         return loss_val
+
+    @staticmethod
+    def _get_learning_rate(prev_loss, loss, training_rate):
+        """ Adapts learning rate according to loss."""
+
+        # Set the annealing rate for decreasing learning rate for higher epochs
+        annealing_rate = 0.9
+
+        # Increase threshold
+        inc_threshold = 0.01
+
+        # Check if loss is decreasing
+        if loss > prev_loss:
+            training_rate = training_rate * annealing_rate
+            logging.info('Decreased Current training rate to {0}'.format(training_rate))
+        else:
+            # Check if loss is decreasing enough
+            if (prev_loss - loss) / prev_loss < inc_threshold:
+                training_rate = training_rate / annealing_rate
+                logging.info('Increased Current training rate to {0}'.format(training_rate))
+
+        return training_rate
+
+    @staticmethod
+    def _check_early_stop(prev_loss, loss, num_bad_epochs):
+
+        # Early stop threshold
+        early_stop_threshold = 3
+
+        # Check if loss is decreasing
+        if loss > prev_loss:
+            num_bad_epochs += 1
+            if num_bad_epochs >= early_stop_threshold:
+                logging.info('Stopping runs...')
+                return False, num_bad_epochs
+        else:
+            num_bad_epochs = 0
+
+        return True, num_bad_epochs
 
     @staticmethod
     def _build_model_graph_var(embedding_size, vocabulary_size, label_size, regularization_func):
@@ -759,16 +791,28 @@ class RNTN(BaseEstimator, ClassifierMixin):
         # total_loss = tf.add(cross_entropy_loss, regularization_loss)
         return mean_loss
 
-    def _cross_entropy_loss(self, labels, logits, weights):
+    def _balanced_cross_entropy_loss(self, labels, logits, weights, feed_dict):
         # One hot encoding
         labels_encoded = tf.one_hot(labels, self.label_size)
 
-        # Get Cross Entropy Loss
+        # Get Cross Entropy Loss without reduction
         cross_entropy = tf.losses.softmax_cross_entropy(labels_encoded,
                                                         logits,
                                                         weights=weights,
                                                         reduction=tf.losses.Reduction.NONE)
-        return cross_entropy
+
+        # Random under sampling
+        # indices = tf.random_uniform(tf.shape(labels), 0, self.label_size, dtype=tf.int32)
+
+        cross_entropy_loss = tf.reduce_sum(cross_entropy)
+
+        regularization_loss = self._regularization_loss()
+        logging.info('Regularization Loss: {0}'.format(regularization_loss.eval(feed_dict)))
+
+        # Return Total Loss
+        total_loss = tf.add(cross_entropy_loss, regularization_loss)
+
+        return total_loss
 
     def _mean_cross_entropy_loss(self, labels, logits, weights):
         # One hot encoding
@@ -1307,7 +1351,7 @@ class RNTN(BaseEstimator, ClassifierMixin):
         :return:
             None.
         """
-        x_dev = DataManager().x_dev
+        x_dev = DataManager().x_dev[:10]
 
         logging.info('Model RNTN _record_epoch_metrics() called on {0} testing samples.'.format(len(x_dev)))
 
