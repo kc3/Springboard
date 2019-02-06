@@ -6,15 +6,17 @@
 # Conforms to Estimator interface of scikit-learn.
 #
 
-from collections import OrderedDict
+from collections import OrderedDict, Counter
 from datetime import datetime
+from imblearn.tensorflow import balanced_batch_generator
+from imblearn.under_sampling import RandomUnderSampler
 import joblib
 import logging
 import os
 import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator, ClassifierMixin
-from sklearn.metrics import make_scorer, log_loss
+from sklearn.metrics import make_scorer, log_loss, classification_report, confusion_matrix
 from sklearn.preprocessing import OneHotEncoder
 # from sklearn.utils.multiclass import check_classification_targets
 # from sklearn.utils.validation import check_X_y, check_is_fitted, check_array
@@ -120,6 +122,16 @@ class RNTN(BaseEstimator, ClassifierMixin):
         """
 
         logging.info('Model RNTN fit() called on {0} training samples.'.format(x.shape[0]))
+
+        # Create y if necessary
+        if y is None:
+            x_t = x[:, 0]
+            y = [x_t[i].root.label for i in range(len(x_t))]
+
+        # Create a Balanced Batch Generator (at root)
+        training_generator, steps_per_epoch = balanced_batch_generator(
+            x, y, sample_weight=None, sampler=None, batch_size=self.batch_size, random_state=42)
+
         x = x[:, 0]
 
         # Number of bad epochs
@@ -149,18 +161,19 @@ class RNTN(BaseEstimator, ClassifierMixin):
         # Run the optimizer num_epoch times.
         # Each iteration is one full run through the train data set.
         for epoch in range(self.num_epochs):
-            logging.info('Epoch {0} out of {1} training started.'.format(epoch, self.num_epochs))
+            logging.info('Epoch {0} out of {1} training started.'.format(epoch + 1, self.num_epochs))
 
+            start_idx = 0
             total_loss = 0.
 
             # Shuffle data set for every epoch
-            np.random.shuffle(x)
+            # np.random.shuffle(x)
 
-            # Train using batch_size samples at a time
-            start_idx = 0
-            while start_idx < len(x):
-                end_idx = min(start_idx + self.batch_size, len(x))
-                logging.info('Processing trees at indices ({0}, {1})'.format(start_idx, end_idx))
+            logging.info('Steps per epoch: {0}'.format(steps_per_epoch))
+            for i in range(steps_per_epoch):
+                # Get a Batch from the Balanced batch generator
+                x_batch, _ = next(training_generator)
+                x_batch_t = x_batch[:, 0]
 
                 # Initialize a session to run tensorflow operations on a new graph.
                 with tf.Graph().as_default(), tf.Session() as session:
@@ -170,10 +183,11 @@ class RNTN(BaseEstimator, ClassifierMixin):
                     self._load_model(session, reset)
 
                     # Build feed dict
-                    feed_dict = self._build_feed_dict(x[start_idx:end_idx])
+                    feed_dict = self._build_feed_dict(x_batch_t)
 
                     # Get labels
                     labels = tf.get_default_graph().get_tensor_by_name('Inputs/label:0')
+                    logging.info('Labels distribution: {0}'.format(Counter(labels.eval(feed_dict))))
 
                     # Get length of the tensor array
                     n = tf.squeeze(tf.shape(labels)).eval(feed_dict)
@@ -215,7 +229,8 @@ class RNTN(BaseEstimator, ClassifierMixin):
                     # Fit will always overwrite any model
                     self._save_model(session)
 
-                start_idx = end_idx
+                start_idx += len(x_batch_t)
+                logging.info('Processed {0} trees. '.format(start_idx))
 
             logging.info('Total Training Loss: {0} for epoch {1}'.format(total_loss, epoch))
 
@@ -371,14 +386,14 @@ class RNTN(BaseEstimator, ClassifierMixin):
             num_bad_epochs += 1
             if num_bad_epochs >= early_stop_threshold:
                 logging.info('Stopping runs...')
-                return False, num_bad_epochs
+                return True, num_bad_epochs
         else:
             num_bad_epochs = 0
 
-        return True, num_bad_epochs
+        return False, num_bad_epochs
 
     @staticmethod
-    def _build_model_graph_var(embedding_size, vocabulary_size, label_size, regularization_func):
+    def _build_model_graph_var(embedding_size, vocabulary_size, label_size):
         """ Builds Computational Graph for model state in Tensorflow.
 
         Defines and initializes the following:
@@ -404,8 +419,6 @@ class RNTN(BaseEstimator, ClassifierMixin):
             Vocabulary size
         :param label_size:
             Label size
-        :param regularization_func:
-            Function used for regularization of weights.
         :return:
             None.
         """
@@ -483,28 +496,33 @@ class RNTN(BaseEstimator, ClassifierMixin):
         """
         # Build Logging variables.
         with tf.variable_scope('Logging', reuse=tf.AUTO_REUSE):
-            train_epoch_loss_val = tf.get_variable(name='train_epoch_loss_val',
-                                             shape=(),
-                                             trainable=False,
-                                             initializer=tf.zeros_initializer)
-            train_epoch_accuracy_val = tf.get_variable(name='train_epoch_accuracy_val',
-                                                 shape=(),
-                                                 trainable=False,
-                                                 initializer=tf.zeros_initializer)
-            train_epoch_cum_sum_logits = tf.get_variable(name='train_epoch_cum_sum_logits',
-                                                 shape=(),
-                                                 dtype=tf.int32,
-                                                 trainable=False,
-                                                 initializer=tf.zeros_initializer)
+            train_epoch_loss_val = tf.get_variable(
+                name='train_epoch_loss_val',
+                shape=(),
+                trainable=False,
+                initializer=tf.zeros_initializer)
+            train_epoch_accuracy_val = tf.get_variable(
+                name='train_epoch_accuracy_val',
+                shape=(),
+                trainable=False,
+                initializer=tf.zeros_initializer)
+            _ = tf.get_variable(
+                name='train_epoch_cum_sum_logits',
+                shape=(),
+                dtype=tf.int32,
+                trainable=False,
+                initializer=tf.zeros_initializer)
 
-            dev_epoch_loss_val = tf.get_variable(name='dev_epoch_loss_val',
-                                                 shape=(),
-                                                 trainable=False,
-                                                 initializer=tf.zeros_initializer)
-            dev_epoch_accuracy_val = tf.get_variable(name='dev_epoch_accuracy_val',
-                                                 shape=(),
-                                                 trainable=False,
-                                                 initializer=tf.zeros_initializer)
+            dev_epoch_loss_val = tf.get_variable(
+                name='dev_epoch_loss_val',
+                shape=(),
+                trainable=False,
+                initializer=tf.zeros_initializer)
+            dev_epoch_accuracy_val = tf.get_variable(
+                name='dev_epoch_accuracy_val',
+                shape=(),
+                trainable=False,
+                initializer=tf.zeros_initializer)
 
         with tf.name_scope('Logging_Variables'):
             _ = tf.summary.scalar('train_epoch_loss', train_epoch_loss_val)
@@ -523,61 +541,61 @@ class RNTN(BaseEstimator, ClassifierMixin):
             The word embedding.
         """
         with tf.variable_scope('Embeddings', reuse=True):
-            L = tf.get_variable('L')
+            embeddings = tf.get_variable('L')
 
         word = tf.cond(tf.less(word_idx, 0),
-                       lambda: tf.random_uniform(tf.gather(L, 0, axis=1).shape, -0.0001, maxval=0.0001),
-                       lambda: tf.gather(L, word_idx, axis=1))
+                       lambda: tf.random_uniform(tf.gather(embeddings, 0, axis=1).shape, -0.0001, maxval=0.0001),
+                       lambda: tf.gather(embeddings, word_idx, axis=1))
         word_col = tf.expand_dims(word, axis=1)
         return word_col
 
     # Function to build composition function for a single non leaf node
     @staticmethod
-    def compose_func_helper(X):
+    def compose_func_helper(x):
         """ Composes graph for intermediate nodes.
 
-        :param X:
+        :param x:
             Concatenated vector for both children.
         :return:
             Composition Layer Input to be used in compose_func.
         """
         # Get model variables
         with tf.variable_scope('Composition', reuse=True):
-            W = tf.get_variable('W')
+            w = tf.get_variable('W')
             b = tf.get_variable('b')
-            T = tf.get_variable('T')
+            t = tf.get_variable('T')
 
         # zs = W * X + b
-        zs = tf.add(tf.matmul(W, X), b)
+        zs = tf.add(tf.matmul(w, x), b)
 
         # zt = X' * T * X
-        m1 = tf.tensordot(T, X, [[1], [0]])
-        m2 = tf.tensordot(X, m1, [[0], [0]])
+        m1 = tf.tensordot(t, x, [[1], [0]])
+        m2 = tf.tensordot(x, m1, [[0], [0]])
         zt = tf.expand_dims(tf.squeeze(m2), axis=1)
 
         # a = zs + zt
         a = tf.add(zs, zt)
         return a
 
-    def compose_relu(self, X):
+    def compose_relu(self, x):
         """ Rectified Linear Unit Composition.
 
-        :param X:
+        :param x:
             Concatenated vector of both children.
         :return:
             Logit after composition.
         """
-        return tf.nn.relu(self.compose_func_helper(X))
+        return tf.nn.relu(self.compose_func_helper(x))
 
-    def compose_tanh(self, X):
+    def compose_tanh(self, x):
         """ Tanh Composition.
 
-        :param X:
+        :param x:
             Concatenated vector of both children.
         :return:
             Logit after composition.
         """
-        return tf.nn.tanh(self.compose_func_helper(X))
+        return tf.nn.tanh(self.compose_func_helper(x))
 
     def _get_compose_func(self):
         """ Gets composition function by name from model parameter compose_func.
@@ -633,27 +651,30 @@ class RNTN(BaseEstimator, ClassifierMixin):
 
         # Define loop condition
         # node_idx < len(tensors)
-        cond = lambda tensors, node_idx: tf.less(node_idx, n)
+        def cond(tensors, node_idx):
+            return tf.less(node_idx, n)
 
         # Define loop body
         # Defines the
         # If leaf return word embedding else combine left and right tensors
-        body = lambda tensors, i:\
-            [
-                tensors.write(i,
-                              tf.cond(
-                                  # If Leaf
-                                  tf.gather(is_leaf, i),
-                                  # Get Word
-                                  lambda: get_word_func(tf.gather(word_index, i)),
-                                  # Else, combine left and right
-                                  lambda: compose_func(tf.concat(
-                                      [
-                                          tensors.read(tf.gather(left_child, i)),
-                                          tensors.read(tf.gather(right_child, i))
-                                      ], axis=0)))),
-                tf.add(i, 1)
-            ]
+        def body(tensors, i):
+            return \
+                [
+                    tensors.write(
+                        i,
+                        tf.cond(
+                            # If Leaf
+                            tf.gather(is_leaf, i),
+                            # Get Word
+                            lambda: get_word_func(tf.gather(word_index, i)),
+                            # Else, combine left and right
+                            lambda: compose_func(tf.concat(
+                                [
+                                    tensors.read(tf.gather(left_child, i)),
+                                    tensors.read(tf.gather(right_child, i))
+                                ], axis=0)))),
+                    tf.add(i, 1)
+                ]
 
         # While loop invocation
         tensors, _ = tf.while_loop(cond, body, [tensors, 0], parallel_iterations=1)
@@ -663,10 +684,10 @@ class RNTN(BaseEstimator, ClassifierMixin):
 
         # Add projection layer
         with tf.variable_scope('Projection', reuse=True):
-            U = tf.get_variable('U')
+            u = tf.get_variable('U')
             bs = tf.get_variable('bs')
 
-        logits = tf.transpose(tf.matmul(tf.transpose(U), p) + bs)
+        logits = tf.transpose(tf.matmul(tf.transpose(u), p) + bs)
         return logits
 
     @staticmethod
@@ -764,9 +785,15 @@ class RNTN(BaseEstimator, ClassifierMixin):
                                                         reduction=tf.losses.Reduction.NONE)
 
         # Random under sampling
-        # indices = tf.random_uniform(tf.shape(labels), 0, self.label_size, dtype=tf.int32)
+        y = labels.eval(feed_dict)
+        x = np.asarray(list(range(len(y)))).reshape(-1, 1)
+        rus = RandomUnderSampler(random_state=42)
+        x_keep, _ = rus.fit_resample(x, y)
+        logging.info('After Dropout: {0}'.format(Counter([y[i] for i in x_keep.reshape(-1)])))
+        cross_entropy_keep = tf.gather(cross_entropy, x_keep.reshape(-1))
 
-        cross_entropy_loss = tf.reduce_sum(cross_entropy)
+        cross_entropy_loss = tf.divide(tf.reduce_sum(cross_entropy_keep), tf.reduce_sum(weights))
+        logging.info('Cross Entropy Loss: {0}'.format(cross_entropy_loss.eval(feed_dict)))
 
         regularization_loss = self._regularization_loss()
         logging.info('Regularization Loss: {0}'.format(regularization_loss.eval(feed_dict)))
@@ -791,19 +818,19 @@ class RNTN(BaseEstimator, ClassifierMixin):
     def _regularization_loss(self):
         # Get Regularization Loss for weight terms excluding biases
         with tf.variable_scope('Embeddings', reuse=True):
-            L = tf.get_variable('L')
+            embeddings = tf.get_variable('L')
 
         with tf.variable_scope('Composition', reuse=True):
-            W = tf.get_variable('W')
-            T = tf.get_variable('T')
+            w = tf.get_variable('W')
+            t = tf.get_variable('T')
 
         with tf.variable_scope('Projection', reuse=True):
-            U = tf.get_variable('U')
+            u = tf.get_variable('U')
 
         regularization_func = self._regularization_l2_func(self.regularization_rate)
-        regularization_embedding_loss = regularization_func(L)
-        regularization_composition_loss = tf.add(regularization_func(W), regularization_func(T))
-        regularization_projection_loss = regularization_func(U)
+        regularization_embedding_loss = regularization_func(embeddings)
+        regularization_composition_loss = tf.add(regularization_func(w), regularization_func(t))
+        regularization_projection_loss = regularization_func(u)
         regularization_loss = tf.add(regularization_embedding_loss,
                                      tf.add(regularization_composition_loss, regularization_projection_loss))
         return regularization_loss
@@ -938,6 +965,28 @@ class RNTN(BaseEstimator, ClassifierMixin):
             assert 0 <= feed_dict['label'][i] <= 4
 
         return feed_dict
+
+    @staticmethod
+    def _get_tree_heights(tree):
+        """ Get heights for all nodes in a tree.
+
+        :param tree:
+            Tree to parse.
+        :return:
+            Array of weights for the nodes.
+        """
+        nodes = []
+        stack = [(0, tree.root)]
+
+        while stack:
+            height, node = stack.pop()
+            if not node.isLeaf:
+                stack.append((height + 1, node.left))
+                stack.append((height + 1, node.right))
+            # Insert at zero or if using append reverse to ensure children come before parent.
+            nodes.insert(0, height)
+
+        return nodes
 
     def _get_tree_weights(self, tree):
         """ Get weights scaled by height for a tree.
@@ -1102,8 +1151,7 @@ class RNTN(BaseEstimator, ClassifierMixin):
         self._build_model_placeholders()
 
         # Build model graph
-        self._build_model_graph_var(self.embedding_size, self.V_, self.label_size,
-                                    self._regularization_l2_func(self.regularization_rate))
+        self._build_model_graph_var(self.embedding_size, self.V_, self.label_size)
 
         # Build logging variables
         self._build_model_logging_var()
@@ -1144,23 +1192,23 @@ class RNTN(BaseEstimator, ClassifierMixin):
             None
         """
         # Get Embeddings and Weights
-        L = tf.get_default_graph().get_tensor_by_name('Embeddings/L:0')
-        W = tf.get_default_graph().get_tensor_by_name('Composition/W:0')
+        e = tf.get_default_graph().get_tensor_by_name('Embeddings/L:0')
+        w = tf.get_default_graph().get_tensor_by_name('Composition/W:0')
         b = tf.get_default_graph().get_tensor_by_name('Composition/b:0')
-        T = tf.get_default_graph().get_tensor_by_name('Composition/T:0')
-        U = tf.get_default_graph().get_tensor_by_name('Projection/U:0')
+        t = tf.get_default_graph().get_tensor_by_name('Composition/T:0')
+        u = tf.get_default_graph().get_tensor_by_name('Projection/U:0')
         bs = tf.get_default_graph().get_tensor_by_name('Projection/bs:0')
-        T_s = tf.reshape(T, [self.embedding_size*2, self.embedding_size*2*self.embedding_size])
+        t_s = tf.reshape(t, [self.embedding_size*2, self.embedding_size*2*self.embedding_size])
 
-        L_v, W_v, b_v, T_v, U_v, bs_v = session.run([L, W, b, T_s, U, bs])
+        e_v, w_v, b_v, t_v, u_v, bs_v = session.run([e, w, b, t_s, u, bs])
 
         save_dir_path = self._get_save_dir()
-        np.save('{0}/L.npy'.format(save_dir_path), L_v)
-        np.save('{0}/W.npy'.format(save_dir_path), W_v)
+        np.save('{0}/L.npy'.format(save_dir_path), e_v)
+        np.save('{0}/W.npy'.format(save_dir_path), w_v)
         np.save('{0}/b.npy'.format(save_dir_path), b_v)
-        np.save('{0}/U.npy'.format(save_dir_path), U_v)
+        np.save('{0}/U.npy'.format(save_dir_path), u_v)
         np.save('{0}/bs.npy'.format(save_dir_path), bs_v)
-        np.save('{0}/T.npy'.format(save_dir_path), T_v)
+        np.save('{0}/T.npy'.format(save_dir_path), t_v)
 
     def predict_proba_full_tree(self, x):
         """ Computes the prediction for each node in the tree.
@@ -1223,14 +1271,14 @@ class RNTN(BaseEstimator, ClassifierMixin):
 
         # Get save dir
         save_dir = self._get_save_dir()
-        L = np.load('{0}/L.npy'.format(save_dir))
-        W = np.load('{0}/W.npy'.format(save_dir))
+        e = np.load('{0}/L.npy'.format(save_dir))
+        w = np.load('{0}/W.npy'.format(save_dir))
         b = np.load('{0}/b.npy'.format(save_dir))
-        U = np.load('{0}/U.npy'.format(save_dir))
+        u = np.load('{0}/U.npy'.format(save_dir))
         bs = np.load('{0}/bs.npy'.format(save_dir))
 
-        T_s = np.load('{0}/T.npy'.format(save_dir))
-        T = T_s.reshape(self.embedding_size*2, self.embedding_size*2, self.embedding_size)
+        t_s = np.load('{0}/T.npy'.format(save_dir))
+        t = t_s.reshape(self.embedding_size*2, self.embedding_size*2, self.embedding_size)
 
         y_prob = []
 
@@ -1244,17 +1292,17 @@ class RNTN(BaseEstimator, ClassifierMixin):
             def get_word_vec(idx):
                 if tree_dict['is_leaf'][idx]:
                     # return word embedding
-                    word_vecs[:, idx] = L[:, tree_dict['word_index'][idx]]
+                    word_vecs[:, idx] = e[:, tree_dict['word_index'][idx]]
                 else:
                     # compose
                     left_v = word_vecs[:, tree_dict['left_child'][idx]]
                     right_v = word_vecs[:, tree_dict['right_child'][idx]]
-                    X = np.concatenate([left_v, right_v])
-                    zs = np.matmul(W, X) + b.reshape(-1)
+                    x_c = np.concatenate([left_v, right_v])
+                    zs = np.matmul(w, x_c) + b.reshape(-1)
                     zd = np.zeros([self.embedding_size])
                     for i in range(self.embedding_size):
-                        T_i = T[:, :, i]
-                        zd[i] = np.matmul(np.matmul(np.transpose(X), T_i), X)
+                        t_i = t[:, :, i]
+                        zd[i] = np.matmul(np.matmul(np.transpose(x_c), t_i), x_c)
                     a = zs + zd
                     word_vecs[:, idx] = np.tanh(a)
 
@@ -1262,7 +1310,7 @@ class RNTN(BaseEstimator, ClassifierMixin):
             logits = np.zeros([len(tree_dict['label']), self.label_size])
             for node in range(len(tree_dict['label'])):
                 get_word_vec(node)
-                projection = np.matmul(np.transpose(U), word_vecs[:, node]) + bs.reshape(-1)
+                projection = np.matmul(np.transpose(u), word_vecs[:, node]) + bs.reshape(-1)
                 logits[node, :] = np.transpose(projection)
 
             # Get softmax and then predictions
@@ -1285,11 +1333,12 @@ class RNTN(BaseEstimator, ClassifierMixin):
 
         # Get save dir
         save_dir = self._get_save_dir()
-        L = np.load('{0}/L.npy'.format(save_dir))
+        embeddings = np.load('{0}/L.npy'.format(save_dir))
 
-        return L, self.vocabulary_
+        return embeddings, self.vocabulary_
 
-    def _predict_from_logits(self, logits):
+    @staticmethod
+    def _predict_from_logits(logits):
         """ Returns a tensor that makes predictions from logits.
 
         :param logits:
@@ -1422,5 +1471,12 @@ class RNTN(BaseEstimator, ClassifierMixin):
 
             # Write the current training status to the log files
             training_writer.add_summary(summary, epoch)
+
+            # Record metrics to log
+            y_pred_val = y_pred.eval(feed_dict)
+            y_true = labels_int.eval(feed_dict)
+            logging.info(classification_report(y_true, y_pred_val))
+            logging.info(confusion_matrix(y_true, y_pred_val))
+
             logging.info('Model RNTN _record_epoch_metrics() returned.')
             return rec_loss_val
