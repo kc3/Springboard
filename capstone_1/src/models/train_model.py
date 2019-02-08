@@ -47,9 +47,9 @@ def train_rntn(model_name=None, num_samples=None, params=None):
 
     if params is None:
         params = {
-            'num_epochs': [30],
+            'num_epochs': [50],
             'training_rate': [0.01],
-            'regularization_rate': [0.01],
+            'regularization_rate': [0.001],
             'embedding_size': [35]
         }
 

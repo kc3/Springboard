@@ -13,6 +13,7 @@ from src.models.rntn import RNTN
 from src.models.data_manager import DataManager
 import tensorflow as tf
 
+
 class TestRNTN(object):
 
     # This test is failing type checks due to tree data structure. Enable once fixed.
@@ -35,7 +36,7 @@ class TestRNTN(object):
 
     def test_fit(self):
         data_mgr = DataManager()
-        x = np.asarray(data_mgr.x_train[0:100]).reshape(-1, 1)
+        x = np.asarray(data_mgr.x_train[0:1000]).reshape(-1, 1)
         r = RNTN(model_name='test')
         r.fit(x, None)
 
@@ -69,8 +70,7 @@ class TestRNTN(object):
             r = RNTN(model_name='word-test')
             x = np.asarray(data_mgr.x_train).reshape(-1, 1)
             r._build_vocabulary(x[:, 0])
-            r._build_model_graph_var(r.embedding_size, r.V_, r.label_size,
-                                     r._regularization_l2_func(r.regularization_rate))
+            r._build_model_graph_var(r.embedding_size, r.V_, r.label_size)
             s.run(tf.global_variables_initializer())
             t = r.get_word(23)
             assert t is not None
@@ -105,9 +105,17 @@ class TestRNTN(object):
         z = np.max(y)
         print(np.ones(5)*z/(y))
 
+    def test_root_samples(self):
+        data_mgr = DataManager()
+        x = data_mgr.x_train
+        y = np.zeros(5)
+        for i in range(len(x)):
+            y[x[i].root.label] += 1
+        print(y)
+
     def test_export_model(self):
         data_mgr = DataManager()
-        x = np.asarray(data_mgr.x_train[0:100]).reshape(-1, 1)
+        x = np.asarray(data_mgr.x_train[0:1000]).reshape(-1, 1)
         r = RNTN(model_name='test-export')
         r.fit(x, None)
 

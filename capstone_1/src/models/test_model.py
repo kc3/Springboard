@@ -15,8 +15,8 @@ class TestModel(object):
     #    check_estimator(train_model.RNTN)
 
     def test_rntn(self):
-        params = {'num_epochs': [3], 'training_rate': [0.001]}
-        train_model.train_rntn(model_name='test-rntn', num_samples=100, params=params)
+        params = {'num_epochs': [3], 'training_rate': [0.01]}
+        train_model.train_rntn(model_name='test-rntn', num_samples=1000, params=params)
 
     def test_predict(self):
         y, tree_json = predict_model('Effective but too-tepid biopic', model_name='test-rntn')

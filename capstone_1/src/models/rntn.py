@@ -9,7 +9,7 @@
 from collections import OrderedDict, Counter
 from datetime import datetime
 from imblearn.tensorflow import balanced_batch_generator
-from imblearn.under_sampling import RandomUnderSampler
+from imblearn.over_sampling import RandomOverSampler
 import joblib
 import logging
 import os
@@ -131,6 +131,7 @@ class RNTN(BaseEstimator, ClassifierMixin):
         # Create a Balanced Batch Generator (at root)
         training_generator, steps_per_epoch = balanced_batch_generator(
             x, y, sample_weight=None, sampler=None, batch_size=self.batch_size, random_state=42)
+        logging.info('Steps per epoch: {0}'.format(steps_per_epoch))
 
         x = x[:, 0]
 
@@ -169,7 +170,6 @@ class RNTN(BaseEstimator, ClassifierMixin):
             # Shuffle data set for every epoch
             # np.random.shuffle(x)
 
-            logging.info('Steps per epoch: {0}'.format(steps_per_epoch))
             for i in range(steps_per_epoch):
                 # Get a Batch from the Balanced batch generator
                 x_batch, _ = next(training_generator)
@@ -787,12 +787,12 @@ class RNTN(BaseEstimator, ClassifierMixin):
         # Random under sampling
         y = labels.eval(feed_dict)
         x = np.asarray(list(range(len(y)))).reshape(-1, 1)
-        rus = RandomUnderSampler(random_state=42)
-        x_keep, _ = rus.fit_resample(x, y)
+        ros = RandomOverSampler(random_state=42)
+        x_keep, _ = ros.fit_resample(x, y)
         logging.info('After Dropout: {0}'.format(Counter([y[i] for i in x_keep.reshape(-1)])))
         cross_entropy_keep = tf.gather(cross_entropy, x_keep.reshape(-1))
 
-        cross_entropy_loss = tf.divide(tf.reduce_sum(cross_entropy_keep), tf.reduce_sum(weights))
+        cross_entropy_loss = tf.divide(tf.reduce_sum(cross_entropy_keep), len(x_keep))
         logging.info('Cross Entropy Loss: {0}'.format(cross_entropy_loss.eval(feed_dict)))
 
         regularization_loss = self._regularization_loss()
