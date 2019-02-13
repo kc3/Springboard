@@ -17,6 +17,7 @@ Contents:
    StoryTelling
    Inference
    ModelDescription
+   ModelBaselines
 
 
 
