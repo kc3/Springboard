@@ -1,0 +1,2 @@
+model_checkpoint_path: "C:\\Users\\cskap\\github\\Springboard\\capstone_1\\src\\models\\../../models//RNTN_30_tanh_35_5_None_50_0.001_0.01_9645/RNTN_30_tanh_35_5_None_50_0.001_0.01_9645.ckpt"
+all_model_checkpoint_paths: "C:\\Users\\cskap\\github\\Springboard\\capstone_1\\src\\models\\../../models//RNTN_30_tanh_35_5_None_50_0.001_0.01_9645/RNTN_30_tanh_35_5_None_50_0.001_0.01_9645.ckpt"
