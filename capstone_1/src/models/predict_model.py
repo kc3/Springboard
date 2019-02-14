@@ -14,7 +14,7 @@ from src.models.rntn import RNTN
 from src.features.tree import Tree as features_tree
 
 
-def predict_model(x, model_name='RNTN_30_tanh_35_5_None_10_0.01_0.001_8544'):
+def predict_model(x, model_name='RNTN_30_tanh_35_5_None_50_0.001_0.01_9645'):
     """ Predict model based on input value.
 
     :param x:
