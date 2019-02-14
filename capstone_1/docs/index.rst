@@ -18,6 +18,7 @@ Contents:
    Inference
    ModelDescription
    ModelBaselines
+   ModelEvaluation
    ModelVisualizations
 
 
