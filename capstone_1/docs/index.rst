@@ -18,14 +18,6 @@ Contents:
    Inference
    ModelDescription
    ModelBaselines
+   ModelTraining
    ModelEvaluation
    ModelVisualizations
-
-
-
-Indices and tables
-==================
-
-* :ref:`genindex`
-* :ref:`modindex`
-* :ref:`search`
