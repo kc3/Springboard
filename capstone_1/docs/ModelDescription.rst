@@ -136,8 +136,8 @@ The derivative of the loss function at with respect to :math:`U` is the
 softmax cross-entropy error, which is simple the sum of each node error,
 that is,
 
-   $:raw-latex:`\delta`\_{i, s} = U^{T}(y_i - t_i)
-   :raw-latex:`\otimes `f’(x_i) $
+   $:raw-latex:`\delta_{i, s} = U^{T}(y_i - t_i)`
+   :raw-latex:`\otimes f’(x_i) $`
 
 where,
 

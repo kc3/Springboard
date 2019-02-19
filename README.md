@@ -64,3 +64,13 @@ Classification Problem using Advertising Campaigns for Wines dataset.
 Project folder: clustering
 
 URL: https://nbviewer.jupyter.org/github/kc3/Springboard/blob/master/clustering/Mini_Project_Clustering.ipynb
+
+## Capstone #1
+Sentiment Analysis of Movie Text Reviews using Recursive Neural Tensor Networks.
+
+The project is based on the following paper: https://nlp.stanford.edu/~socherr/EMNLP2013_RNTN.pdf
+
+Project folder: capstone_1
+
+Final Report: https://github.com/kc3/Springboard/blob/master/capstone_1/docs/capstone_1.pdf 
+
