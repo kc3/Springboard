@@ -18,9 +18,9 @@ The following trigram example shows how the prediction occurs at each
 phase.
 
 .. figure:: TrigramExample.png
-   :alt: title
+   :alt: Trigram Example
 
-   title
+   Trigram Example
 
 Each word vector is represented as a :math:`d` dimensional word vector.
 All the word vectors are stacked in the word embedding matrix :math:`L`
@@ -136,8 +136,7 @@ The derivative of the loss function at with respect to :math:`U` is the
 softmax cross-entropy error, which is simple the sum of each node error,
 that is,
 
-   $:raw-latex:`\delta_{i, s} = U^{T}(y_i - t_i)`
-   :raw-latex:`\otimes f’(x_i) $`
+   :math:`\delta_{i, s} = U^{T}(y_i - t_i) \otimes f’(x_i)`
 
 where,
 

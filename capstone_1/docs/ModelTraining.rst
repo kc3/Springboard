@@ -42,18 +42,14 @@ out NaN’s for any values above 0.1 or 0.0001 training rates due to
 exploding and vanishing gradients respectively.
 
 .. figure:: ../docs/LR_Comp_Training.png
-   :alt: title
+   :alt: LR_Training
 
-   title
-
-Image credit: Andrew Ng’s Coursera course on ML
+   Learning Rate (Image credit: Andrew Ng’s Coursera course on ML)
 
 .. figure:: ../docs/LR_Training.jpg
-   :alt: title
+   :alt: LR_Training_Alt
 
-   title
-
-Image Credit: cs231n
+   Learning Rate (Image Credit: cs231n)
 
 The initial learning rate is determined to be 0.01 and then it is
 adaptively changed based on following algorithm: \* If the
@@ -143,9 +139,9 @@ represented by the softmax_cross_entropy_loss function. The following
 image was generated using Tensorboard.
 
 .. figure:: ../docs/graph_RNTN_30_tanh_35_5_None_50_0.001_0.01.png
-   :alt: title
+   :alt: Tensorflow Graph
 
-   title
+   Tensorflow Graph
 
 Evaluation Metrics
 ^^^^^^^^^^^^^^^^^^

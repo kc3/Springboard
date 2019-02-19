@@ -6,8 +6,6 @@
 Capstone 1 documentation!
 ==============================================
 
-Contents:
-
 .. toctree::
    :maxdepth: 2
 
@@ -21,3 +19,4 @@ Contents:
    ModelTraining
    ModelEvaluation
    ModelVisualizations
+   References

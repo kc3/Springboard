@@ -38,11 +38,12 @@ Start Prediction server
 
 > *python -m src.webapp.webapp*
 
+Navigate to Server URL
+~~~~~~~~~~~~~~~~~~~~~~~
+
+> Go to the url: http://localhost:8000
+
 View Results
 ~~~~~~~~~~~~~~~~~~~
 
 > Enter your movie review in the text box to view results!
-
-
-
-
