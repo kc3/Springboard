@@ -31,7 +31,7 @@ Download CoreNLP
 Start CoreNLP
 ~~~~~~~~~~~~~~~~~~~
 
-> *java -mx4g -cp "*" edu.stanford.nlp.pipeline.StanfordCoreNLPServer -port 9000 -timeout 15000*
+> *java -mx4g -cp "**" *edu.stanford.nlp.pipeline.StanfordCoreNLPServer -port 9000 -timeout 15000*
 
 Start Prediction server
 ~~~~~~~~~~~~~~~~~~~~~~~
@@ -41,7 +41,7 @@ Start Prediction server
 Navigate to Server URL
 ~~~~~~~~~~~~~~~~~~~~~~~
 
-> Go to the url: http://localhost:8000
+> Go to the url: *http://localhost:8000*
 
 View Results
 ~~~~~~~~~~~~~~~~~~~
