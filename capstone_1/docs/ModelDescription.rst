@@ -42,14 +42,19 @@ The Composition step can be represented by the following equations:
 
    :math:`a = f(zs + zt)` (Composition function)
 
-where: \* W: Weights to be computed by the model of shape [:math:`d`,
-2\ *:math:`d`] for Composition step.* X: Word embeddings for input words
-stacked together. X is a column vector of shape [2*:math:`d`, 1]* b:
-bias term for the node of shape [:math:`d`, 1] \* T: Tensor of dimension
-[2*:math:`d`, 2*\ :math:`d`, :math:`d`]. Each T[:,:,\ :math:`i`] slice
+where:
+
+W: Weights to be computed by the model of shape [:math:`d`, 2\ :math:`d`] for Composition step.
+
+X: Word embeddings for input words stacked together. X is a column vector of shape [2*:math:`d`, 1]
+
+b: bias term for the node of shape [:math:`d`, 1]
+
+T: Tensor of dimension [2*:math:`d`, 2*\ :math:`d`, :math:`d`]. Each T[:,:,\ :math:`i`] slice
 generates a scalar, which is one component of the final word vector of
-dimension d. \* f: Non-linear function specifying the compositionality
-of the classifier. *tanh* in this case.
+dimension d.
+
+f: Non-linear function specifying the compositionality of the classifier. *tanh* in this case.
 
 The main benefit of this model is due to the tensor layer. This layer
 generates internal representations for the most common tree structures,
@@ -63,9 +68,13 @@ posterior probability over labels given the word vector via:
 
    y = :math:`U^{T} * a + bs`
 
-where, \* U: Sentiment Classification Matrix Weights to be computed by
+where,
+
+U: Sentiment Classification Matrix Weights to be computed by
 model for Projection Step of shape [d, label_size] where label_size is
-the number of classes. \* bs: Bias term for Projection Step of shape
+the number of classes.
+
+bs: Bias term for Projection Step of shape
 [label_size, 1] \* a: Output of the composition layer
 
 For the above example, let
