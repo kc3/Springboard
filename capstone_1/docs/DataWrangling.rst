@@ -26,19 +26,22 @@ Parsing Sentiment Tree
 
 A typical training sample looks like this:
 
-> (3 (2 But) (3 (2 he) (3 (2 somehow) (3 (3 (2 (2 pulls) (2 it)) (1 off)) (2 .)))))
+..
+
+    (3 (2 But) (3 (2 he) (3 (2 somehow) (3 (3 (2 (2 pulls) (2 it)) (1 off)) (2 .)))))
 
 One of the main checks on the first examination of data was to make sure
-that all trees could be parsed into properly formed trees. The tree
-nodes had to satisfy the following properties: \* Each node was either a
-leaf or an intermediate node with exactly two children. \* A Leaf Node
-must have a sentiment label and a word associated with it. \* Leaf Nodes
-have no children. \* An Intermediate Node must have exactly two children
-and a sentiment label associated with it. \* Intermediate Nodes do not
-have any word association.
+that all trees could be parsed into properly formed trees.
 
-Tests were written to verify that the entire training dataset satisfied
-the above properties
+The tree nodes had to satisfy the following properties:
+
+- *Each node was either a leaf or an intermediate node with exactly two children.*
+- *A Leaf Node must have a sentiment label and a word associated with it.*
+- *Leaf Nodes have no children.*
+- *An Intermediate Node must have exactly two children and a sentiment label associated with it.*
+- *Intermediate Nodes do not have any word association.*
+
+Tests were written to verify that the entire training dataset satisfied the above properties
 `test_tree.py <https://github.com/kc3/Springboard/blob/master/capstone_1/src/features/test_tree.py>`__
 
 Environment Setup
