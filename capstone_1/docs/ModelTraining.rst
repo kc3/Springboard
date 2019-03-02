@@ -52,9 +52,12 @@ exploding and vanishing gradients respectively.
    Learning Rate (Image Credit: cs231n)
 
 The initial learning rate is determined to be 0.01 and then it is
-adaptively changed based on following algorithm: \* If the
-cross-validation loss is less than itself from previous epoch, the
-learning rate is decreased \* If the cross-validation loss is less than
+adaptively changed based on following algorithm:
+
+- If the cross-validation loss is less than itself from previous epoch, the
+learning rate is decreased.
+
+- If the cross-validation loss is less than
 threshold of 1% from previous epoch, the learning rate is increased.
 
 For this network, learning rate of 0.01 gives the minimum amount of
