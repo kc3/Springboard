@@ -5,8 +5,8 @@ Deep learning for Sentiment Analysis
 Motivation
 ^^^^^^^^^^
 
-*Sentiment analysis* is a field of study that covers that analyzes
-people’s opinions, appraisals, attitudes, and emotions towards entities
+*Sentiment analysis* is a field of study that analyzes
+people's opinions, appraisals, attitudes, and emotions towards entities
 such as products, services, organizations, individuals, issues, events,
 topics, and their attributes.
 
@@ -22,8 +22,8 @@ organizations always want to find consumer or public opinions about
 their products and services. Individual consumers also want to know the
 opinions of existing users of a product before purchasing it, and peer
 opinions about political candidates before making a voting decision in a
-political election. An example of an application would be tracking user
-opinions about companies to predict their stock prices or box office
+political election. Examples of applications would be tracking user
+opinions to predict stock prices for a company or predict box office
 revenues for a movie.
 
 Problem Description
@@ -55,8 +55,7 @@ to some aspect of the movie such as its screenplay. For example,
    *“The acting was mediocre, but the screenplay was top quality”.*
 
 In this case, the screenplay had very positive review (emphasized) while
-the acting had a very negative review (not emphasized). Aspects make
-sentiment analysis very domain specific. In general, every domain tends
+the acting had a very negative review (not emphasized). In general, every domain tends
 to have a specific vocabulary that cannot be used for other domains. The
 project scope is only restricted to movie review sentences.
 
@@ -66,75 +65,80 @@ such as bad, mediocre or terrible. Numerous efforts have been made to
 build such lexicons, which are not sufficient as the problem is more
 complex.
 
-Some of the obstacles are:
+Some of the challenges with analyzing each review are:
 
 -  **Language ambiguity**: Example,
 
-   “The movie blows” vs “The movie blows away all expectations”.
-
 ::
 
-   The word “blows” has negative orientation in one and positive in other.
+   “The movie blows” vs “The movie blows away all expectations”.
+
+..
+
+    The word “blows” has negative orientation in one and positive in other.
 
 -  **Contrapositive conjunction**: The review
 
-..
+::
 
    “The acting sucked but the movie was entertaining”.
 
-::
+..
 
    Here the review is of the form “X but Y”. The goal of the project would be to classify each phrase, X and Y accurately and then determine the overall sentiment for the movie, positive in this case.
 
--  **Sentence negation**: There are two kinds of examples here, \*\*
-   Negative positives:
+-  **Sentence negation**: There are two kinds of examples here,
+
+   - Negative positives:
+
+::
+
+    “The movie was not very great”.
 
 ..
 
-   “The movie was not very great”.
-
-::
-
    Here the phrase “very great” is positive but “not” changes the sentiment of the review.
 
-\*\* Negative negatives:
+   - Negative negatives:
+
+::
 
    “The movie was not that terrible”.
 
-::
+..
 
    Here the phrase “terrible” is negative, but “not” does not make it positive.
 
 -  **Sarcasm**: Sarcastic comments are hardest to detect and deal with.
    Example,
 
-..
+::
 
    “I was never this excited to leave the theater”.
 
-::
+..
 
    This is a very negative comment, but very hard to classify.
 
 -  **Sentences with no opinions**: These are usually questions such as
 
-..
+::
 
    “Has any seen this movie?”
 
-::
-
-   or conditionals 
-
 ..
+
+   or conditionals, such as,
+
+::
 
    “If the acting is good, I will go and see the movie.”
 
-::
-
-   Both are neutral sentences. However not all questions or conditionals are neutral, example 
-
 ..
+
+   Both are neutral sentences. However not all questions or conditionals are neutral, example
+
+::
 
    “Has anyone else seen this terrible movie?” or
 
@@ -142,11 +146,11 @@ Some of the obstacles are:
 
 -  **Sentences with no sentiment words but with opinions**: Example,
 
-..
+::
 
    “The movie solved my insomnia”.
 
-::
+..
 
    This is a very negative review without a sentiment word such as good or bad.
 
@@ -157,13 +161,15 @@ contrapositive conjunction and sentence negation are mitigated by
 constructing parse trees of the text and using compositionality
 functions trained over known examples, which is what mostly the bulk of
 this project is about. The sarcastic comments and the sentences with no
-opinions will be not be specially handled.
+opinions will be not be treated differently than regular sentences. We expect the
+tensor model to classify the cases with no sentiment words correctly as negative or
+neutral respectively.
 
 Methodology
 ^^^^^^^^^^^
 
 The goal of the project is to build a sentiment classification system
-using deep learning, namely Recursive Tensor Neural Network (RNTN). This
+using deep learning, namely Recursive Neural Tensor Network (RNTN). This
 method uses tensors to remove dependency on the vocabulary and captures
 different types of associations in the RNN.
 
