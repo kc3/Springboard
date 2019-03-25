@@ -65,6 +65,13 @@ Project folder: clustering
 
 URL: https://nbviewer.jupyter.org/github/kc3/Springboard/blob/master/clustering/Mini_Project_Clustering.ipynb
 
+## 17.1 User Engagement
+Classification Problem using User Engagement dataset to identify factors responsible for user platform adoption.
+
+Project folder: relax_challenge
+
+URL: https://nbviewer.jupyter.org/github/kc3/Springboard/blob/master/relax_challenge/RelaxDataChallenge.ipynb
+
 ## Capstone #1
 Sentiment Analysis of Movie Text Reviews using Recursive Neural Tensor Networks.
 
