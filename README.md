@@ -72,6 +72,13 @@ Project folder: relax_challenge
 
 URL: https://nbviewer.jupyter.org/github/kc3/Springboard/blob/master/relax_challenge/RelaxDataChallenge.ipynb
 
+## 17.2 User Retention
+Classification Problem using User login dataset to identify factors responsible for user retention on a data platform.
+
+Project folder: ultimate_challenge
+
+URL: https://nbviewer.jupyter.org/github/kc3/Springboard/blob/master/ultimate_challenge/Ultimate.ipynb
+
 ## Capstone #1
 Sentiment Analysis of Movie Text Reviews using Recursive Neural Tensor Networks.
 
