@@ -1,6 +1,34 @@
 Getting started
 ===============
 
-This is where you describe how to get set up on a clean install, including the
-commands necessary to get the raw data (using the `sync_data_from_s3` command,
-for example), and then how to make the cleaned, final data sets.
+Download Source
+~~~~~~~~~~~~~~~~
+
+> *git clone https://github.com/kc3/Springboard.git*
+
+Change directory
+~~~~~~~~~~~~~~~~
+
+> *cd capstone_2*
+
+
+Create Environment
+~~~~~~~~~~~~~~~~~~~
+
+> *conda env create -n 'capstone_2' -f environment.yml*
+
+
+Test Environment
+~~~~~~~~~~~~~~~~~~~
+
+> *tox*
+
+Download Movie Dialog Dataset
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+> Download data using *python .\src\data\make_dataset.py ./src/data/raw ./src/data/interim ./src/data/processed*
+
+Chat Demo
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+> Launch Chatbot using command *python -m src.models.predict*

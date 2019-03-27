@@ -185,7 +185,7 @@ latex_elements = {
 latex_documents = [
     ('index',
      'capstone_2.tex',
-     u'capstone_2 Documentation',
+     u'Deep Reinforcement Learning for Dialogue Generation',
      u"Kapil Chiravarambath", 'manual'),
 ]
 
@@ -231,7 +231,7 @@ man_pages = [
 texinfo_documents = [
     ('index', 'capstone_2', u'capstone_2 Documentation',
      u"Kapil Chiravarambath", 'capstone_2',
-     'Dialogue Generation using Deep Reinforcement Learning.', 'Miscellaneous'),
+     'Dialogue Generation using Deep Reinforcement Learning', 'Miscellaneous'),
 ]
 
 # Documents to append as an appendix to all manuals.
