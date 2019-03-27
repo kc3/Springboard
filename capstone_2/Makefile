@@ -18,7 +18,7 @@ endif
 
 #################################################################################
 # COMMANDS                                                                      #
-#################################################################################
+#################################c################################################
 
 ## Install Python Dependencies
 requirements: test_environment
@@ -59,7 +59,7 @@ create_environment:
 ifeq (True,$(HAS_CONDA))
 		@echo ">>> Detected conda, creating conda environment."
 ifeq (3,$(findstring 3,$(PYTHON_INTERPRETER)))
-	conda create --name $(PROJECT_NAME) python=3
+	conda create --name $(PROJECT_NAME) python=3.6
 else
 	conda create --name $(PROJECT_NAME) python=2.7
 endif
@@ -140,5 +140,4 @@ help:
 			printf "%s ", words[i]; \
 		} \
 		printf "\n"; \
-	}' \
-	| more $(shell test $(shell uname) = Darwin && echo '--no-init --raw-control-chars')
+	}'
