@@ -26,9 +26,9 @@ Test Environment
 Download Movie Dialog Dataset
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-> Download data using *python .\src\data\make_dataset.py ./src/data/raw ./src/data/interim ./src/data/processed*
+> *python .\src\data\make_dataset.py ./src/data/raw ./src/data/interim ./src/data/processed*
 
 Chat Demo
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-> Launch Chatbot using command *python -m src.models.predict*
+> *python -m src.models.predict*

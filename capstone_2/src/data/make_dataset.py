@@ -5,24 +5,32 @@ from pathlib import Path
 from dotenv import find_dotenv, load_dotenv
 import requests
 import zipfile
+from shutil import copyfile
 
 @click.command()
-@click.argument('input_filepath', type=click.Path(exists=True))
-@click.argument('output_filepath', type=click.Path())
-def main(input_filepath, output_filepath):
+@click.argument('input_file_path', type=click.Path(exists=True))
+@click.argument('interim_file_path', type=click.Path())
+@click.argument('output_file_path', type=click.Path())
+def main(input_file_path, interim_file_path, output_file_path):
     """ Runs data processing scripts to turn raw data from (./data/raw) into
         cleaned data ready to be analyzed (saved in ./data/processed).
     """
     logger = logging.getLogger(__name__)
 
-    # logger.info('Downloading raw files.')
+    logger.info('Downloading raw files.')
     # url = 'http://opus.nlpl.eu/download.php?f=OpenSubtitles/v2016/raw/en.zip'
-    # file_path = download_file(url, input_filepath, 'OpenSubtitles-raw-')
-    # logging.info('Downloaded file {0}'.format(file_path))
+    url = 'http://www.cs.cornell.edu/~cristian/data/cornell_movie_dialogs_corpus.zip'
+    file_path = download_file(url, input_file_path, '')
+    logging.info('Downloaded file {0}'.format(file_path))
 
-    file_path = './data/raw/OpenSubtitles-raw-en.zip'
     logger.info('Unzipping file: {0}'.format(file_path))
-    unzip_file(file_path, output_filepath)
+    unzip_file(file_path, interim_file_path)
+    logger.info('Unzipped files: {0}'.format(file_path))
+
+    copyfile('{0}/cornell movie-dialogs corpus/movie_lines.txt'.format(interim_file_path),
+             '{0}/movie_lines.txt'.format(interim_file_path))
+    copyfile('{0}/cornell movie-dialogs corpus/movie_conversations.txt'.format(interim_file_path),
+             '{0}/movie_conversations.txt'.format(interim_file_path))
 
     # logger.info('making final data set from raw data')
 
@@ -50,6 +58,7 @@ def download_file(url, save_dir, file_prefix):
 
     return file_path
 
+
 def unzip_file(url, save_dir):
     """ Unzips a file at the given url.
 
@@ -69,7 +78,7 @@ if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO, format=log_fmt)
 
     # not used in this stub but often useful for finding various files
-    project_dir = Path(__file__).resolve().parents[2]
+    project_dir = Path(__file__).resolve().parents[3]
 
     # find .env automagically by walking up directories until it's found, then
     # load up the .env entries as environment variables
