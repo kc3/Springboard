@@ -15,3 +15,4 @@ Contents:
    ProjectProposal
    DataWrangling
    DataInsights
+   ModelDescription
