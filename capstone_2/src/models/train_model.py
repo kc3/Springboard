@@ -1,8 +1,10 @@
 
-import os
 import logging
+import os
 from datetime import datetime
 from src.models.data_manager import DataManager
+from src.models.seqtoseq_model import SeqToSeqModel
+from src.models.policy_model import PolicyGradientModel
 
 
 # Function to train SeqToSeq models
@@ -28,6 +30,16 @@ def train_seqtoseq(model_name=None, num_samples=None, params=None):
     d = DataManager()
     sorted_questions, sorted_answers, questions_int_to_vocab, answers_int_to_vocab = d.get_cornell_data()
     logging.info('Cornell Data Set loaded...')
+
+    # Train individual agent
+    s_model = SeqToSeqModel()
+    s_model.fit(sorted_questions, sorted_answers, questions_int_to_vocab, answers_int_to_vocab)
+    logging.info('Finished training SeqtoSeq Model...')
+
+    # Train a policy gradient model
+    # p_model = PolicyGradientModel()
+    # p_model.fit()
+    # logging.info('Finished training PolicyGradient Model...')
 
 
 if __name__ == '__main__':

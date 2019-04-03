@@ -1,4 +1,6 @@
 
+from src.models.data_manager import DataManager
+
 # Function to predict SeqToSeq models
 
 
