@@ -16,3 +16,4 @@ Contents:
    DataWrangling
    DataInsights
    ModelDescription
+   RLModel
