@@ -32,7 +32,7 @@ def train_seqtoseq(model_name=None, num_samples=None, params=None):
     logging.info('Cornell Data Set loaded...')
 
     # Train individual agent
-    s_model = SeqToSeqModel()
+    s_model = SeqToSeqModel(model_name=model_name)
     s_model.fit(sorted_questions, sorted_answers, questions_int_to_vocab, answers_int_to_vocab)
     logging.info('Finished training SeqtoSeq Model...')
 
@@ -43,4 +43,4 @@ def train_seqtoseq(model_name=None, num_samples=None, params=None):
 
 
 if __name__ == '__main__':
-    train_seqtoseq()
+    train_seqtoseq(model_name='default')

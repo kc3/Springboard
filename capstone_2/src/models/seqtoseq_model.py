@@ -1,6 +1,7 @@
 
 # from sklearn.base import BaseEstimator
 import logging
+import os
 import numpy as np
 import tensorflow as tf
 import time
@@ -147,8 +148,6 @@ class SeqToSeqModel:
             summary_valid_loss = []
             learning_rate = self.learning_rate
 
-            checkpoint = "best_model.ckpt"
-
             sess.run(tf.global_variables_initializer())
 
             for epoch_i in range(1, self.epochs + 1):
@@ -203,8 +202,7 @@ class SeqToSeqModel:
                         if avg_valid_loss <= min(summary_valid_loss):
                             print('New Record!')
                             stop_early = 0
-                            saver = tf.train.Saver()
-                            saver.save(sess, checkpoint)
+                            self._save_model(sess)
 
                         else:
                             print("No Improvement.")
@@ -475,3 +473,39 @@ class SeqToSeqModel:
             pad_questions_batch = np.array(self.pad_sentence_batch(questions_batch, questions_vocab_to_int))
             pad_answers_batch = np.array(self.pad_sentence_batch(answers_batch, answers_vocab_to_int))
             yield pad_questions_batch, pad_answers_batch, sequence_length_batch
+
+    def _save_model(self, session):
+        """ Saves model to the disk. Should be called only by fit.
+
+        :param session:
+            Valid session object.
+        :return:
+            None.
+        """
+
+        # Save model for tensorflow reuse for next epoch
+        saver = tf.train.Saver()
+        save_path = self._get_model_save_path()
+        saver.save(session, save_path)
+
+    def _get_save_dir(self):
+        """ Checks for save directory and builds it if necessary.
+
+        :return:
+             A string containing save directory path
+        """
+        abs_path = os.path.abspath(os.path.dirname(__file__))
+        def_models_path = os.path.join(abs_path, '../../models/')
+        save_dir = def_models_path + self.model_name
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
+        return save_dir
+
+    def _get_model_save_path(self):
+        """ Builds save path for the model.
+
+        :return:
+            A string containing model save path.
+        """
+        assert self.model_name is not None
+        return '{0}/{1}.ckpt'.format(self._get_save_dir(), self.model_name)
