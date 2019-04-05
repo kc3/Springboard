@@ -28,12 +28,11 @@ def train_seqtoseq(model_name=None, num_samples=None, params=None):
     logging.info('Seq2Seq Model Training started.')
 
     d = DataManager()
-    sorted_questions, sorted_answers, questions_int_to_vocab, answers_int_to_vocab = d.get_cornell_data()
     logging.info('Cornell Data Set loaded...')
 
     # Train individual agent
     s_model = SeqToSeqModel(model_name=model_name)
-    s_model.fit(sorted_questions, sorted_answers, questions_int_to_vocab, answers_int_to_vocab)
+    s_model.fit(d)
     logging.info('Finished training SeqtoSeq Model...')
 
     # Train a policy gradient model
@@ -43,4 +42,4 @@ def train_seqtoseq(model_name=None, num_samples=None, params=None):
 
 
 if __name__ == '__main__':
-    train_seqtoseq(model_name='default')
+    train_seqtoseq(model_name='test-seqtoseq')

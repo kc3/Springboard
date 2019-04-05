@@ -147,8 +147,11 @@ class DataManager:
             "you're": "you are",
             "you've": "you have"
         }
-
         self.contractions_re = re.compile('(%s)' % '|'.join(self.contractions_dict.keys()), re.IGNORECASE)
+        self.sorted_questions, self.sorted_answers, self.questions_int_to_vocab, self.answers_int_to_vocab = \
+            self.get_cornell_data()
+        self.questions_vocab_to_int = {v_i: v for v, v_i in self.questions_int_to_vocab.items()}
+        self.answers_vocab_to_int = {v_i: v for v, v_i in self.answers_int_to_vocab.items()}
 
     def expand_contractions(self, s):
         def replace(match):
@@ -390,3 +393,37 @@ class DataManager:
                     break
 
             return s
+
+    def question_to_tokens(self, question):
+        """Converts text to tokens in vocabulary."""
+        # Clean question
+        question = self.expand_contractions(question)
+
+        # Load dict for word -> int
+        file_path = '{0}/questions_int_to_vocab.pkl'.format(self._def_processed_path)
+        questions_int_to_vocab = joblib.load(file_path)
+        questions_vocab_to_int = {v_i: v for v, v_i in questions_int_to_vocab.items()}
+
+        # Convert text to ints
+        tokens = []
+        for word in question.split():
+            if word not in questions_vocab_to_int:
+                tokens.append(questions_vocab_to_int['<UNK>'])
+            else:
+                tokens.append(questions_vocab_to_int[word])
+
+        return tokens
+
+    def answer_from_tokens(self, answer):
+        """Converts vocabulary tokens to text."""
+
+        words = []
+        for token in answer:
+            if token in self.answers_int_to_vocab:
+                words.append(self.answers_int_to_vocab[token])
+            else:
+                words.append(self.answers_int_to_vocab['<UNK>'])
+
+        sentence = ' '.join(words)
+
+        return sentence

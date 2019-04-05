@@ -5,6 +5,7 @@ import os
 import numpy as np
 import tensorflow as tf
 import time
+from src.models.data_manager import DataManager
 
 #
 # Sequence to Sequence Model
@@ -26,6 +27,7 @@ class SeqToSeqModel:
                  learning_rate_decay=0.9,
                  min_learning_rate=0.0001,
                  keep_probability=0.75,
+                 max_sequence_length=21,
                  model_name=None
                  ):
 
@@ -60,38 +62,70 @@ class SeqToSeqModel:
         # Keep probability
         self.keep_probability = keep_probability
 
+        # Maximum sequence length
+        self.max_sequence_length = max_sequence_length
+
         # Model Name
         self.model_name = model_name
 
         logging.info('Model SeqtoSeq Initialization completed.')
 
-    def fit(self, sorted_questions, sorted_answers, questions_int_to_vocab, answers_int_to_vocab):
+    def fit(self, data_manager: DataManager):
         """Training model."""
 
-        # Create dictionaries to map the unique integers to their respective words.
-        # i.e. an inverse dictionary for vocab_to_int.
-        questions_vocab_to_int = {v_i: v for v, v_i in questions_int_to_vocab.items()}
-        answers_vocab_to_int = {v_i: v for v, v_i in answers_int_to_vocab.items()}
+        sorted_questions = data_manager.sorted_questions
+        sorted_answers = data_manager.sorted_answers
+        questions_int_to_vocab = data_manager.questions_int_to_vocab
+        answers_int_to_vocab = data_manager.answers_int_to_vocab
+        questions_vocab_to_int = data_manager.questions_vocab_to_int
+        answers_vocab_to_int = data_manager.answers_vocab_to_int
 
-        # Reset the graph to ensure that it is ready for training
-        tf.reset_default_graph()
+        # Validate the training with 10% of the data
+        train_valid_split = int(len(sorted_questions) * 0.15)
+
+        # Split the questions and answers into training and validating data
+        train_questions = sorted_questions[train_valid_split:]
+        train_answers = sorted_answers[train_valid_split:]
+
+        valid_questions = sorted_questions[:train_valid_split]
+        valid_answers = sorted_answers[:train_valid_split]
+
+        # Check training loss after every 100 batches
+        display_step = 100
+
+        # Early Stop Initialization
+        stop_early = 0
+
+        # If the validation loss does decrease in 5 consecutive checks, stop training
+        stop = 5
+
+        # Modulus for checking validation loss
+        validation_check = ((len(train_questions)) // self.batch_size // 2) - 1
+
+        # Record the training loss for each display step
+        total_train_loss = 0
+
+        # Record the validation loss for saving improvements in the model
+        summary_valid_loss = []
+        learning_rate = self.learning_rate
 
         # Start the session
-        with tf.Session() as sess:
+        with tf.Graph().as_default(), tf.Session() as session:
 
             # Load the model inputs
-            input_data, targets, lr = self.model_inputs()
+            input_data, targets, lr, input_sequence_length, output_sequence_length = self.model_inputs()
 
-            # Sequence length will be the max line length for each batch
-            # sequence_length = tf.placeholder_with_default(max_line_length, None, name='sequence_length')
-            sequence_length = tf.placeholder(tf.int32, shape=[self.batch_size], name="sequence_length")
-
-            # Find the shape of the input data for sequence_loss
-            input_shape = tf.shape(input_data)
+            # Model Graph Variables
+            # self.model_graph_vars(data_manager)
+            print('Output vocab size: {0}'.format(len(answers_vocab_to_int)))
 
             # Create the training and inference logits
             train_logits, inference_logits = self.seq2seq_model(
-                tf.reverse(input_data, [-1]), targets, self.batch_size, sequence_length,
+                tf.reverse(input_data, [-1]),
+                targets,
+                self.batch_size,
+                input_sequence_length,
+                output_sequence_length,
                 len(answers_vocab_to_int),
                 len(questions_vocab_to_int),
                 self.encoding_embedding_size,
@@ -99,9 +133,6 @@ class SeqToSeqModel:
                 self.rnn_size,
                 self.num_layers,
                 questions_vocab_to_int)
-
-            # Create a tensor for the inference logits, needed if loading a checkpoint version of the model
-            tf.identity(inference_logits, 'logits')
 
             with tf.name_scope("optimization"):
                 # Loss function
@@ -119,48 +150,27 @@ class SeqToSeqModel:
                     (tf.clip_by_value(grad, -5., 5.), var) for grad, var in gradients if grad is not None]
                 train_op = optimizer.apply_gradients(capped_gradients)
 
-            # Validate the training with 10% of the data
-            train_valid_split = int(len(sorted_questions) * 0.15)
-
-            # Split the questions and answers into training and validating data
-            train_questions = sorted_questions[train_valid_split:]
-            train_answers = sorted_answers[train_valid_split:]
-
-            valid_questions = sorted_questions[:train_valid_split]
-            valid_answers = sorted_answers[:train_valid_split]
-
-            # Check training loss after every 100 batches
-            display_step = 100
-
-            # Early Stop Initialization
-            stop_early = 0
-
-            # If the validation loss does decrease in 5 consecutive checks, stop training
-            stop = 5
-
-            # Modulus for checking validation loss
-            validation_check = ((len(train_questions)) // self.batch_size // 2) - 1
-
-            # Record the training loss for each display step
-            total_train_loss = 0
-
-            # Record the validation loss for saving improvements in the model
-            summary_valid_loss = []
-            learning_rate = self.learning_rate
-
-            sess.run(tf.global_variables_initializer())
+            session.run(tf.global_variables_initializer())
 
             for epoch_i in range(1, self.epochs + 1):
-                for batch_i, (questions_batch, answers_batch, sequence_length_batch) in enumerate(
+                for batch_i, \
+                    (questions_batch, answers_batch, q_sequence_length_batch, a_sequence_length_batch) in enumerate(
                         self.batch_data(train_questions,
-                                        train_answers, self.batch_size, questions_vocab_to_int, answers_vocab_to_int)):
+                                        train_answers,
+                                        self.batch_size,
+                                        questions_vocab_to_int,
+                                        answers_vocab_to_int)):
+
+                    feed_dict = {
+                        input_data: questions_batch,
+                        targets: answers_batch,
+                        lr: learning_rate,
+                        input_sequence_length: q_sequence_length_batch,
+                        output_sequence_length: a_sequence_length_batch
+                    }
+
                     start_time = time.time()
-                    _, loss = sess.run(
-                        [train_op, cost],
-                        {input_data: questions_batch,
-                         targets: answers_batch,
-                         lr: learning_rate,
-                         sequence_length: sequence_length_batch})
+                    _, loss = session.run([train_op, cost], feed_dict=feed_dict)
 
                     total_train_loss += loss
                     end_time = time.time()
@@ -179,14 +189,17 @@ class SeqToSeqModel:
                     if batch_i % validation_check == 0 and batch_i > 0:
                         total_valid_loss = 0
                         start_time = time.time()
-                        for batch_ii, (questions_batch_ii, answers_batch_ii, sequence_length_batch_ii) in \
+                        for batch_ii, \
+                            (questions_batch_ii, answers_batch_ii,
+                             q_sequence_length_batch_ii, a_sequence_length_batch_ii) in \
                                 enumerate(self.batch_data(valid_questions, valid_answers, self.batch_size,
                                                           questions_vocab_to_int, answers_vocab_to_int)):
-                            valid_loss = sess.run(
+                            valid_loss = session.run(
                                 cost, {input_data: questions_batch_ii,
                                        targets: answers_batch_ii,
                                        lr: learning_rate,
-                                       sequence_length: sequence_length_batch_ii})
+                                       input_sequence_length: q_sequence_length_batch_ii,
+                                       output_sequence_length: a_sequence_length_batch_ii})
                             total_valid_loss += valid_loss
                         end_time = time.time()
                         batch_time = end_time - start_time
@@ -202,7 +215,7 @@ class SeqToSeqModel:
                         if avg_valid_loss <= min(summary_valid_loss):
                             print('New Record!')
                             stop_early = 0
-                            self._save_model(sess)
+                            self._save_model(session)
 
                         else:
                             print("No Improvement.")
@@ -216,23 +229,117 @@ class SeqToSeqModel:
 
         return
 
-    def predict(self, question):
-        pass
+    def predict(self, input_question, data_manager: DataManager):
+        """Predict a response for the given question"""
 
-    @staticmethod
-    def model_inputs():
+        # Reset the graph to ensure that it is ready for training
+        tf.reset_default_graph()
+
+        # Start the session
+        with tf.Session() as session:
+
+            # Load the model inputs
+            input_data, targets, lr, input_sequence_length, output_sequence_length = self.model_inputs()
+
+            # Create the training and inference logits
+            _, inference_logits = self.seq2seq_model(
+                tf.reverse(input_data, [-1]),
+                targets,
+                self.batch_size,
+                input_sequence_length,
+                output_sequence_length,
+                len(data_manager.answers_vocab_to_int),
+                len(data_manager.questions_vocab_to_int),
+                self.encoding_embedding_size,
+                self.decoding_embedding_size,
+                self.rnn_size,
+                self.num_layers,
+                data_manager.questions_vocab_to_int)
+
+            session.run(tf.global_variables_initializer())
+
+            # Restore session
+            saver = tf.train.Saver()
+            save_path = self._get_model_save_path()
+            saver.restore(session, save_path)
+            logging.info('Saved model {0} loaded from disk.'.format(save_path))
+
+            # Add empty questions so the the input_data is the correct shape
+            questions = [input_question] * self.batch_size
+
+            # Add empty answers so the the input_data is the correct shape
+            single_input_answer = [data_manager.answers_vocab_to_int['<GO>'],
+                                   data_manager.answers_vocab_to_int['<PAD>']]
+            answers = [single_input_answer] * self.batch_size
+
+            # Get Placeholders
+            graph = tf.get_default_graph()
+            input_data = graph.get_tensor_by_name('Inputs/input_data:0')
+            targets = graph.get_tensor_by_name('Inputs/targets:0')
+            lr = graph.get_tensor_by_name('Inputs/learning_rate:0')
+            input_sequence_length = graph.get_tensor_by_name('Inputs/input_sequence_length:0')
+            output_sequence_length = graph.get_tensor_by_name('Inputs/output_sequence_length:0')
+
+            for batch_i, \
+                (pad_questions_batch, pad_answers_batch, q_sequence_length_batch, a_sequence_length_batch) in enumerate(
+                self.batch_data(questions, answers, self.batch_size,
+                                data_manager.questions_vocab_to_int, data_manager.answers_vocab_to_int)):
+
+                # Build feed_dict
+                feed_dict = {
+                    input_data: pad_questions_batch,
+                    targets: pad_answers_batch,
+                    lr: self.learning_rate,
+                    input_sequence_length: q_sequence_length_batch,
+                    output_sequence_length: a_sequence_length_batch
+                }
+
+                # Get prediction
+                answers = session.run([inference_logits], feed_dict=feed_dict)
+                answer = np.argmax(answers[0][0], axis=-1)
+
+                return answer
+
+        raise AssertionError('Prediction batch processing failed.')
+
+    def model_inputs(self):
         """Create placeholders for inputs to the model"""
 
-        # Question
-        input_data = tf.placeholder(tf.int32, [None, None], name='input')
+        with tf.name_scope('Inputs'):
 
-        # Response
-        targets = tf.placeholder(tf.int32, [None, None], name='targets')
+            # Question
+            input_data = tf.placeholder(tf.int32, shape=[self.batch_size, self.max_sequence_length], name='input_data')
 
-        # Learning Rate
-        lr = tf.placeholder(tf.float32, name='learning_rate')
+            # Response
+            targets = tf.placeholder(tf.int32, shape=[self.batch_size, self.max_sequence_length], name='targets')
 
-        return input_data, targets, lr
+            # Learning Rate
+            lr = tf.placeholder(tf.float32, name='learning_rate')
+
+            # Input Sequence length
+            input_sequence_length = tf.placeholder(tf.int32, shape=[self.batch_size], name="input_sequence_length")
+
+            # Output Sequence length
+            output_sequence_length = tf.placeholder(tf.int32, shape=[self.batch_size], name="output_sequence_length")
+
+        return input_data, targets, lr, input_sequence_length, output_sequence_length
+
+    def model_graph_vars(self, data_manager: DataManager):
+        """Create Graph variables for this model"""
+
+        uniform_r = 0.01
+
+        # Build Word Embeddings.
+        with tf.variable_scope('Embeddings', reuse=tf.AUTO_REUSE):
+            _ = tf.get_variable(name='Input_Embeddings',
+                                shape=[len(data_manager.questions_int_to_vocab), self.encoding_embedding_size],
+                                initializer=tf.random_uniform_initializer(-1 * uniform_r, uniform_r),
+                                trainable=True)
+
+            _ = tf.get_variable(name='Output_Embeddings',
+                                shape=[len(data_manager.answers_int_to_vocab), self.decoding_embedding_size],
+                                initializer=tf.random_uniform_initializer(-1 * uniform_r, uniform_r),
+                                trainable=True)
 
     @staticmethod
     def process_encoding_input(target_data, vocab_to_int, batch_size):
@@ -257,62 +364,6 @@ class SeqToSeqModel:
             dtype=tf.float32)
 
         return enc_output, enc_state
-
-    @staticmethod
-    def decoding_layer_train(encoder_state, dec_cell, dec_embed_input, sequence_length, decoding_scope,
-                             output_fn, keep_prob, batch_size):
-        """Decode the training data"""
-
-        attention_states = tf.zeros([batch_size, 1, dec_cell.output_size])
-
-        att_keys, att_vals, att_score_fn, att_construct_fn = \
-            tf.contrib.seq2seq.prepare_attention(attention_states,
-                                                 attention_option="bahdanau",
-                                                 num_units=dec_cell.output_size)
-
-        train_decoder_fn = tf.contrib.seq2seq.attention_decoder_fn_train(encoder_state[0],
-                                                                      att_keys,
-                                                                      att_vals,
-                                                                      att_score_fn,
-                                                                      att_construct_fn,
-                                                                      name="attn_dec_train")
-        train_pred, _, _ = tf.contrib.seq2seq.dynamic_rnn_decoder(dec_cell,
-                                                                  train_decoder_fn,
-                                                                  dec_embed_input,
-                                                                  sequence_length,
-                                                                  scope=decoding_scope)
-        train_pred_drop = tf.nn.dropout(train_pred, keep_prob)
-        return output_fn(train_pred_drop)
-
-    @staticmethod
-    def decoding_layer_infer(encoder_state, dec_cell, dec_embeddings, start_of_sequence_id, end_of_sequence_id,
-                             maximum_length, vocab_size, decoding_scope, output_fn, batch_size):
-        """Decode the prediction data"""
-
-        attention_states = tf.zeros([batch_size, 1, dec_cell.output_size])
-
-        att_keys, att_vals, att_score_fn, att_construct_fn = \
-            tf.contrib.seq2seq.prepare_attention(attention_states,
-                                                 attention_option="bahdanau",
-                                                 num_units=dec_cell.output_size)
-
-        infer_decoder_fn = tf.contrib.seq2seq.attention_decoder_fn_inference(output_fn,
-                                                                             encoder_state[0],
-                                                                             att_keys,
-                                                                             att_vals,
-                                                                             att_score_fn,
-                                                                             att_construct_fn,
-                                                                             dec_embeddings,
-                                                                             start_of_sequence_id,
-                                                                             end_of_sequence_id,
-                                                                             maximum_length,
-                                                                             vocab_size,
-                                                                             name="attn_dec_inf")
-        infer_logits, _, _ = tf.contrib.seq2seq.dynamic_rnn_decoder(dec_cell,
-                                                                    infer_decoder_fn,
-                                                                    scope=decoding_scope)
-
-        return infer_logits
 
     def decode(self, vocab_size, sequence_length, encoder_output, encoder_state, helper, scope, reuse=None):
 
@@ -364,7 +415,8 @@ class SeqToSeqModel:
 
             final_outputs, _final_state, _final_sequence_lengths = tf.contrib.seq2seq.dynamic_decode(
                 decoder=decoder,
-                impute_finished=True
+                #impute_finished=True,
+                maximum_iterations=self.max_sequence_length
             )
 
             logits = final_outputs.rnn_output
@@ -378,8 +430,9 @@ class SeqToSeqModel:
         start_of_sequence_id = vocab_to_int['<GO>']
         start_tokens = tf.fill([batch_size], start_of_sequence_id)
         end_of_sequence_id = vocab_to_int['<EOS>']
+        sequence_lengths = tf.fill([batch_size], self.max_sequence_length)
 
-        train_helper = tf.contrib.seq2seq.TrainingHelper(dec_embed_input, sequence_length)
+        train_helper = tf.contrib.seq2seq.TrainingHelper(dec_embed_input, sequence_lengths)
         infer_helper = tf.contrib.seq2seq.GreedyEmbeddingHelper(dec_embeddings,
                                                                 start_tokens=tf.to_int32(start_tokens),
                                                                 end_token=end_of_sequence_id)
@@ -398,12 +451,12 @@ class SeqToSeqModel:
             #                                              biases_initializer=biases)
             #
             train_logits = self.decode(
-                vocab_size, sequence_length, encoder_output, encoder_state, train_helper, 'scope')
+                vocab_size, sequence_length, encoder_output, encoder_state, train_helper, 'decoding')
 
             decoding_scope.reuse_variables()
 
             infer_logits = self.decode(
-                vocab_size, sequence_length, encoder_output, encoder_state, infer_helper, 'scope',
+                vocab_size, sequence_length, encoder_output, encoder_state, infer_helper, 'decoding',
                 reuse=True)
 
             # train_logits = self.decoding_layer_train(encoder_state,
@@ -428,20 +481,20 @@ class SeqToSeqModel:
 
         return train_logits, infer_logits
 
-    def seq2seq_model(self, input_data, target_data, batch_size, sequence_length, answers_vocab_size,
-                      questions_vocab_size, enc_embedding_size, dec_embedding_size, rnn_size, num_layers,
-                      questions_vocab_to_int):
+    def seq2seq_model(self, input_data, target_data, batch_size, input_sequence_length, output_sequence_length,
+                      answers_vocab_size, questions_vocab_size, enc_embedding_size, dec_embedding_size, rnn_size,
+                      num_layers, questions_vocab_to_int):
         """Use the previous functions to create the training and inference logits"""
 
         enc_embed_input = tf.contrib.layers.embed_sequence(input_data,
-                                                           answers_vocab_size + 1,
+                                                           questions_vocab_size,
                                                            enc_embedding_size,
                                                            initializer=tf.random_uniform_initializer(0, 1))
         enc_output, enc_state = self.encoding_layer(
-            enc_embed_input, rnn_size, num_layers, self.keep_probability, sequence_length)
+            enc_embed_input, rnn_size, num_layers, self.keep_probability, input_sequence_length)
 
         dec_input = self.process_encoding_input(target_data, questions_vocab_to_int, batch_size)
-        dec_embeddings = tf.Variable(tf.random_uniform([questions_vocab_size + 1, dec_embedding_size], 0, 1))
+        dec_embeddings = tf.Variable(tf.random_uniform([answers_vocab_size, dec_embedding_size], 0, 1))
         dec_embed_input = tf.nn.embedding_lookup(dec_embeddings, dec_input)
 
         train_logits, infer_logits = self.decoding_layer(dec_embed_input,
@@ -449,7 +502,7 @@ class SeqToSeqModel:
                                                          enc_output,
                                                          enc_state,
                                                          questions_vocab_size,
-                                                         sequence_length,
+                                                         output_sequence_length,
                                                          rnn_size,
                                                          num_layers,
                                                          questions_vocab_to_int,
@@ -457,11 +510,10 @@ class SeqToSeqModel:
                                                          batch_size)
         return train_logits, infer_logits
 
-    @staticmethod
-    def pad_sentence_batch(sentence_batch, vocab_to_int):
+    def pad_sentence_batch(self, sentence_batch, pad_token):
         """Pad sentences with <PAD> so that each sentence of a batch has the same length"""
-        max_sentence = max([len(sentence) for sentence in sentence_batch])
-        return [sentence + [vocab_to_int['<PAD>']] * (max_sentence - len(sentence)) for sentence in sentence_batch]
+        max_sentence = self.max_sequence_length
+        return [sentence + [pad_token] * (max_sentence - len(sentence)) for sentence in sentence_batch]
 
     def batch_data(self, questions, answers, batch_size, questions_vocab_to_int, answers_vocab_to_int):
         """Batch questions and answers together"""
@@ -469,10 +521,11 @@ class SeqToSeqModel:
             start_i = batch_i * batch_size
             questions_batch = questions[start_i:start_i + batch_size]
             answers_batch = answers[start_i:start_i + batch_size]
-            sequence_length_batch = [len(answer) for answer in answers_batch]
-            pad_questions_batch = np.array(self.pad_sentence_batch(questions_batch, questions_vocab_to_int))
-            pad_answers_batch = np.array(self.pad_sentence_batch(answers_batch, answers_vocab_to_int))
-            yield pad_questions_batch, pad_answers_batch, sequence_length_batch
+            q_sequence_length_batch = [len(question) for question in questions_batch]
+            a_sequence_length_batch = [len(answer) for answer in answers_batch]
+            pad_questions_batch = self.pad_sentence_batch(questions_batch, questions_vocab_to_int['<PAD>'])
+            pad_answers_batch = self.pad_sentence_batch(answers_batch, answers_vocab_to_int['<PAD>'])
+            yield pad_questions_batch, pad_answers_batch, q_sequence_length_batch, a_sequence_length_batch
 
     def _save_model(self, session):
         """ Saves model to the disk. Should be called only by fit.
@@ -487,6 +540,7 @@ class SeqToSeqModel:
         saver = tf.train.Saver()
         save_path = self._get_model_save_path()
         saver.save(session, save_path)
+        logging.info('Saved model {0} to disk.'.format(save_path))
 
     def _get_save_dir(self):
         """ Checks for save directory and builds it if necessary.
