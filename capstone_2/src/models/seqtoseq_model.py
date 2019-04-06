@@ -368,7 +368,7 @@ class SeqToSeqModel:
 
         return enc_output, enc_state
 
-    def decode(self, vocab_size, sequence_length, encoder_output, encoder_state, helper, scope, reuse=None):
+    def decode(self, vocab_size, input_sequence_length, encoder_output, encoder_state, helper, scope, reuse=None):
 
         with tf.variable_scope(scope, reuse=reuse):
             lstm = tf.contrib.rnn.BasicLSTMCell(self.rnn_size)
@@ -383,25 +383,29 @@ class SeqToSeqModel:
 
             bi_encoder_state = tuple(bi_encoder_state)
 
-            # num_units = dec_cell.output_size
-            #
-            # # Create Attention Mechanism
-            # attention_mechanism = tf.contrib.seq2seq.BahdanauAttention(
-            #     num_units=num_units,
-            #     memory=tf.concat(encoder_output, -1),
-            #     normalize=True)
-            #
-            # attn_cell = tf.contrib.seq2seq.AttentionWrapper(
-            #    dec_cell, attention_mechanism, output_attention=False)
-            #
-            # attention_zero = attn_cell.zero_state(batch_size=self.batch_size, dtype=tf.float32).clone(bi_encoder_state)
+            # Create Attention Mechanism
+            attention_mechanism = tf.contrib.seq2seq.BahdanauAttention(
+                num_units=self.rnn_size,
+                memory=tf.concat(encoder_output, -1),
+                memory_sequence_length=input_sequence_length)
+
+            attn_cell = tf.contrib.seq2seq.AttentionWrapper(
+                dec_cell,
+                attention_mechanism,
+                output_attention=False)
+
+            attention_zero = attn_cell.zero_state(
+                batch_size=self.batch_size,
+                dtype=tf.float32).clone(cell_state=bi_encoder_state)
 
             projection_layer = tf.layers.Dense(vocab_size, use_bias=True, bias_initializer=tf.zeros_initializer())
 
             decoder = tf.contrib.seq2seq.BasicDecoder(
                 cell=dec_cell,
+                # cell=attn_cell,
                 helper=helper,
                 initial_state=bi_encoder_state,
+                # initial_state=attention_zero,
                 output_layer=projection_layer
             )
 
@@ -416,7 +420,7 @@ class SeqToSeqModel:
             return logits
 
     def decoding_layer(self, dec_embed_input, dec_embeddings, encoder_output, encoder_state, vocab_size,
-                       sequence_length, rnn_size, num_layers, vocab_to_int, keep_prob, batch_size):
+                       input_sequence_length, rnn_size, num_layers, vocab_to_int, keep_prob, batch_size):
         """Create the decoding cell and input the parameters for the training and inference decoding layers"""
 
         start_of_sequence_id = vocab_to_int['<GO>']
@@ -443,12 +447,12 @@ class SeqToSeqModel:
             #                                              biases_initializer=biases)
             #
             train_logits = self.decode(
-                vocab_size, sequence_length, encoder_output, encoder_state, train_helper, 'decoding')
+                vocab_size, input_sequence_length, encoder_output, encoder_state, train_helper, 'decoding')
 
             decoding_scope.reuse_variables()
 
             infer_logits = self.decode(
-                vocab_size, sequence_length, encoder_output, encoder_state, infer_helper, 'decoding',
+                vocab_size, input_sequence_length, encoder_output, encoder_state, infer_helper, 'decoding',
                 reuse=True)
 
             # train_logits = self.decoding_layer_train(encoder_state,
@@ -494,7 +498,7 @@ class SeqToSeqModel:
                                                          enc_output,
                                                          enc_state,
                                                          questions_vocab_size,
-                                                         output_sequence_length,
+                                                         input_sequence_length,
                                                          rnn_size,
                                                          num_layers,
                                                          questions_vocab_to_int,
