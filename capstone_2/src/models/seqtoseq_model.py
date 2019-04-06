@@ -135,11 +135,14 @@ class SeqToSeqModel:
                 questions_vocab_to_int)
 
             with tf.name_scope("optimization"):
+                # Compute weight mask
+                mask = tf.sequence_mask(output_sequence_length, self.max_sequence_length, dtype=tf.float32)
+
                 # Loss function
                 cost = tf.contrib.seq2seq.sequence_loss(
                     train_logits,
                     targets,
-                    tf.ones_like(targets, dtype=tf.float32))
+                    mask)
 
                 # Optimizer
                 optimizer = tf.train.AdamOptimizer(self.learning_rate)
@@ -372,17 +375,6 @@ class SeqToSeqModel:
             drop = tf.contrib.rnn.DropoutWrapper(lstm, input_keep_prob=self.keep_probability)
             dec_cell = tf.contrib.rnn.MultiRNNCell([drop] * self.num_layers)
 
-            num_units = dec_cell.output_size
-
-            # Create Attention Mechanism
-            # attention_mechanism = tf.contrib.seq2seq.BahdanauAttention(
-            #    num_units=num_units, memory=tf.transpose(tf.concat(encoder_output, -1), [1, 0, 2]), normalize=True)
-
-            # attn_cell = tf.contrib.seq2seq.AttentionWrapper(
-            #    dec_cell, attention_mechanism, output_attention=False)
-
-            # attention_zero = attn_cell.zero_state(batch_size=self.batch_size, dtype=tf.float32)
-
             # alternatively concat forward and backward states
             bi_encoder_state = []
             for layer_id in range(self.num_layers):
@@ -391,19 +383,19 @@ class SeqToSeqModel:
 
             bi_encoder_state = tuple(bi_encoder_state)
 
-            # concatenate c1 and c2 from encoder final states
-            # new_c = tf.concat([encoder_state[0][0].c, encoder_state[0][1].c], axis=1)
+            # num_units = dec_cell.output_size
+            #
+            # # Create Attention Mechanism
+            # attention_mechanism = tf.contrib.seq2seq.BahdanauAttention(
+            #     num_units=num_units,
+            #     memory=tf.concat(encoder_output, -1),
+            #     normalize=True)
+            #
+            # attn_cell = tf.contrib.seq2seq.AttentionWrapper(
+            #    dec_cell, attention_mechanism, output_attention=False)
+            #
+            # attention_zero = attn_cell.zero_state(batch_size=self.batch_size, dtype=tf.float32).clone(bi_encoder_state)
 
-            # concatenate h1 and h2 from encoder final states
-            # new_h = tf.concat([encoder_state[0][0].h, encoder_state[0][1].h], axis=1)
-
-            # define initial state using concatenated h states and c states
-            # init_state = attention_zero.clone(cell_state=tf.contrib.rnn.LSTMStateTuple(c=new_c, h=new_h))
-            # init_state = attention_zero.clone(cell_state=bi_encoder_state)
-
-            # out_cell = tf.contrib.rnn.OutputProjectionWrapper(
-            #     attn_cell, vocab_size, reuse=reuse
-            # )
             projection_layer = tf.layers.Dense(vocab_size, use_bias=True, bias_initializer=tf.zeros_initializer())
 
             decoder = tf.contrib.seq2seq.BasicDecoder(
@@ -415,7 +407,7 @@ class SeqToSeqModel:
 
             final_outputs, _final_state, _final_sequence_lengths = tf.contrib.seq2seq.dynamic_decode(
                 decoder=decoder,
-                #impute_finished=True,
+                impute_finished=True,
                 maximum_iterations=self.max_sequence_length
             )
 

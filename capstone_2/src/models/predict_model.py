@@ -1,6 +1,7 @@
 
 import logging
 import os
+import numpy as np
 from datetime import datetime
 from src.models.data_manager import DataManager
 from src.models.seqtoseq_model import SeqToSeqModel
@@ -43,7 +44,7 @@ def predict_seqtoseq(question, model_name=None):
     print(a_tokens)
 
     # Convert answer to text
-    answer = d.answer_from_tokens(a_tokens)
+    answer = d.answer_from_tokens(np.trim_zeros(a_tokens, 'b'))
 
     print(answer)
     return answer
