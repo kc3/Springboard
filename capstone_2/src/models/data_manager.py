@@ -427,3 +427,19 @@ class DataManager:
         sentence = ' '.join(words)
 
         return sentence
+
+    def get_cornell_starting_prompts(self):
+
+        questions = [
+            "How about dinner Saturday night?",
+            "There is a fight going on in the quad.",
+            "What do we do about this project?"
+        ]
+
+        q_tokens = []
+
+        for question in questions:
+            q_clean = self.expand_contractions(question)
+            q_tokens.append(self.question_to_tokens(q_clean))
+
+        return q_tokens

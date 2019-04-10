@@ -37,6 +37,11 @@ class TestModel(object):
         assert a is not None
         assert b is not None
 
+    def test_get_starting_prompts(self):
+        questions = DataManager().get_cornell_starting_prompts()
+        print(questions)
+        assert len(questions) > 0
+
     @pytest.mark.run_this
     def test_train_seqtoseq(self):
         train_model.train_seqtoseq(model_name='test-seqtoseq')

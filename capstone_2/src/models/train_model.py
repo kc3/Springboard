@@ -10,7 +10,7 @@ from src.models.policy_model import PolicyGradientModel
 # Function to train SeqToSeq models
 
 
-def train_seqtoseq(model_name=None, num_samples=None, params=None):
+def train_seqtoseq(model_name=None, epochs=100):
     #
     # Configure logging
     #
@@ -31,7 +31,7 @@ def train_seqtoseq(model_name=None, num_samples=None, params=None):
     logging.info('Cornell Data Set loaded...')
 
     # Train individual agent
-    s_model = SeqToSeqModel(model_name=model_name)
+    s_model = SeqToSeqModel(model_name=model_name, epochs=epochs)
     s_model.fit(d)
     logging.info('Finished training SeqtoSeq Model...')
 
