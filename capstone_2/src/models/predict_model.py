@@ -52,8 +52,9 @@ def predict_seqtoseq(question, model_name=None):
 
 def predict_loop(model_name=None, num_turns=8):
     """Creates a chatbot loop."""
+
+    print('Hello!')
     for i in range(num_turns):
-        print('Hello!')
         question = input('> ')
         if question == 'exit':
             print('Goodbye!')
@@ -63,4 +64,4 @@ def predict_loop(model_name=None, num_turns=8):
 
 
 if __name__ == '__main__':
-    predict_loop(model_name='test-seqtoseq')
+    predict_loop(model_name='test-seqtoseq-attn')

@@ -42,4 +42,4 @@ def train_seqtoseq(model_name=None, num_samples=None, params=None):
 
 
 if __name__ == '__main__':
-    train_seqtoseq(model_name='test-seqtoseq')
+    train_seqtoseq(model_name='test-seqtoseq-attn')

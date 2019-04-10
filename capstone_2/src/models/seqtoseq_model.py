@@ -117,7 +117,6 @@ class SeqToSeqModel:
 
             # Model Graph Variables
             # self.model_graph_vars(data_manager)
-            print('Output vocab size: {0}'.format(len(answers_vocab_to_int)))
 
             # Create the training and inference logits
             train_logits, inference_logits = self.seq2seq_model(
@@ -156,6 +155,8 @@ class SeqToSeqModel:
             session.run(tf.global_variables_initializer())
 
             for epoch_i in range(1, self.epochs + 1):
+                #shuffled_questions, shuffled_answers = self._shuffle_training_data(train_questions, train_answers)
+
                 for batch_i, \
                     (questions_batch, answers_batch, q_sequence_length_batch, a_sequence_length_batch) in enumerate(
                         self.batch_data(train_questions,
@@ -389,9 +390,15 @@ class SeqToSeqModel:
                 memory=tf.concat(encoder_output, -1),
                 memory_sequence_length=input_sequence_length)
 
+            # Function to combine inputs and attention
+            def add_attention(inputs, attention):
+                f, b = tf.split(value=attention, num_or_size_splits=2, axis=tf.constant(1, dtype=tf.int32))
+                return tf.multiply(inputs, tf.add(f, b))
+
             attn_cell = tf.contrib.seq2seq.AttentionWrapper(
                 dec_cell,
                 attention_mechanism,
+                cell_input_fn=add_attention,
                 output_attention=False)
 
             attention_zero = attn_cell.zero_state(
@@ -401,11 +408,9 @@ class SeqToSeqModel:
             projection_layer = tf.layers.Dense(vocab_size, use_bias=True, bias_initializer=tf.zeros_initializer())
 
             decoder = tf.contrib.seq2seq.BasicDecoder(
-                cell=dec_cell,
-                # cell=attn_cell,
+                cell=attn_cell,
                 helper=helper,
-                initial_state=bi_encoder_state,
-                # initial_state=attention_zero,
+                initial_state=attention_zero,
                 output_layer=projection_layer
             )
 
@@ -454,26 +459,6 @@ class SeqToSeqModel:
             infer_logits = self.decode(
                 vocab_size, input_sequence_length, encoder_output, encoder_state, infer_helper, 'decoding',
                 reuse=True)
-
-            # train_logits = self.decoding_layer_train(encoder_state,
-            #                                          dec_cell,
-            #                                          dec_embed_input,
-            #                                          sequence_length,
-            #                                          decoding_scope,
-            #                                          output_fn,
-            #                                          keep_prob,
-            #                                          batch_size)
-            # decoding_scope.reuse_variables()
-            # infer_logits = self.decoding_layer_infer(encoder_state,
-            #                                          dec_cell,
-            #                                          dec_embeddings,
-            #                                          vocab_to_int['<GO>'],
-            #                                          vocab_to_int['<EOS>'],
-            #                                          sequence_length - 1,
-            #                                          vocab_size,
-            #                                          decoding_scope,
-            #                                          output_fn,
-            #                                          batch_size)
 
         return train_logits, infer_logits
 
@@ -559,3 +544,18 @@ class SeqToSeqModel:
         """
         assert self.model_name is not None
         return '{0}/{1}.ckpt'.format(self._get_save_dir(), self.model_name)
+
+    @staticmethod
+    def _shuffle_training_data(questions, answers):
+        """Randomly shuffles questions and answers training data."""
+
+        index = np.arange(len(questions))
+        np.random.shuffle(index)
+
+        q = []
+        a = []
+        for i in index:
+            q.append(questions[i])
+            a.append(answers[i])
+
+        return q, a
