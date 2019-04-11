@@ -35,11 +35,36 @@ def train_seqtoseq(model_name=None, epochs=100):
     s_model.fit(d)
     logging.info('Finished training SeqtoSeq Model...')
 
-    # Train a policy gradient model
-    # p_model = PolicyGradientModel()
-    # p_model.fit()
-    # logging.info('Finished training PolicyGradient Model...')
+
+# Function to train RL models
+
+
+def train_rl(model_name=None, epochs=100):
+    #
+    # Configure logging
+    #
+    abs_path = os.path.abspath(os.path.dirname(__file__))
+    logs_dir = os.path.join(abs_path, '../../logs')
+    if not os.path.exists(logs_dir):
+        os.mkdir(logs_dir)
+        os.chmod(logs_dir, 0o777)
+    log_path = os.path.join(abs_path, '../../logs/run-{0}.log')
+    logging.basicConfig(filename=log_path.format(datetime.now().strftime('%Y%m%d-%H%M%S')),
+                        level=logging.INFO,
+                        format='%(asctime)s-%(process)d-%(name)s-%(levelname)s-%(message)s',
+                        datefmt='%Y-%m-%d %H:%M:%S')
+
+    logging.info('RL Model Training started.')
+
+    d = DataManager()
+    logging.info('Cornell Data Set loaded...')
+
+    # Train individual agent
+    s_model = PolicyGradientModel(model_name=model_name, epochs=epochs)
+    s_model.fit(d)
+    logging.info('Finished training RL Model...')
 
 
 if __name__ == '__main__':
-    train_seqtoseq(model_name='test-seqtoseq-attn')
+    train_seqtoseq(model_name='test-policy')
+    train_rl(model_name='test-rl')

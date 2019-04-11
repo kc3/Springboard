@@ -443,3 +443,22 @@ class DataManager:
             q_tokens.append(self.question_to_tokens(q_clean))
 
         return q_tokens
+
+    def get_cornell_dull_responses(self):
+
+        questions = [
+            "I am not <UNK>",
+            "I do not know that",
+            "I am not sure",
+            "I do not think that",
+            "I am sorry"
+        ]
+
+        q_tokens = []
+
+        for question in questions:
+            q_clean = self.expand_contractions(question)
+            q_tokens.append(self.question_to_tokens(q_clean))
+
+        return q_tokens
+

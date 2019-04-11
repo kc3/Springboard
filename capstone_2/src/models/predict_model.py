@@ -119,4 +119,4 @@ def predict_loop(model_name=None, num_turns=8):
 
 
 if __name__ == '__main__':
-    predict_loop(model_name='test-seqtoseq-attn')
+    predict_loop(model_name='test-policy')

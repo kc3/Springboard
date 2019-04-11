@@ -5,6 +5,7 @@ import numpy as np
 import tensorflow as tf
 import time
 from src.models.data_manager import DataManager
+from src.models.seqtoseq_model import SeqToSeqModel
 
 
 class PolicyGradientModel:
@@ -13,21 +14,33 @@ class PolicyGradientModel:
     def __init__(self,
                  turns=5,
                  actions=5,
-                 epochs = 100,
+                 epochs=100,
+                 agent_model_name='test-policy',
                  model_name=None):
         """Model Parameters Init."""
 
         self.turns = turns
         self.actions = actions
         self.epochs = epochs
+        self.agent_model_name = agent_model_name
         self.model_name = model_name
+
+        logging.info('Policy Gradient Model Initialized.')
 
     def fit(self, data_manager: DataManager):
         """Fits a policy model using a trained seqtoseq model."""
 
+        # Read Starting Prompts
+        starting_prompts = data_manager.get_cornell_starting_prompts()
+
+        # Read Dull Responses.
+        dull_responses = data_manager.get_cornell_dull_responses()
+
         # Load Agent 1
+        agent_1 = SeqToSeqModel(model_name=self.agent_model_name)
 
         # Load Agent 2
+        agent_2 = SeqToSeqModel(model_name=self.agent_model_name)
 
         # Create tf Session
         with tf.Graph().as_default(), tf.Session() as session:
@@ -52,10 +65,11 @@ class PolicyGradientModel:
     def _loss(self, logits, labels):
         pass
 
-    def _reward(self, loss):
+    def _reward(self):
         pass
 
-    def _ease_of_answering(self):
+    def _ease_of_answering(self, dull_responses, response):
+
         pass
 
     def _information_flow(self):

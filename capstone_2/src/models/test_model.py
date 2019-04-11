@@ -8,7 +8,7 @@ import pytest
 from datetime import datetime
 from src.models.data_manager import DataManager
 from src.models import train_model
-from src.models.predict_model import predict_seqtoseq
+from src.models.predict_model import predict_seqtoseq, predict_seqtoseq_beam
 
 #
 # Configure logging
@@ -42,7 +42,11 @@ class TestModel(object):
         print(questions)
         assert len(questions) > 0
 
-    @pytest.mark.run_this
+    def test_get_dull_responses(self):
+        questions = DataManager().get_cornell_dull_responses()
+        print(questions)
+        assert len(questions) > 0
+
     def test_train_seqtoseq(self):
         train_model.train_seqtoseq(model_name='test-seqtoseq')
 
@@ -50,8 +54,10 @@ class TestModel(object):
         y = predict_seqtoseq('Hi!', model_name='test-seqtoseq')
         print(y)
 
+    @pytest.mark.run_this
     def test_train_policy(self):
-        pass
+        train_model.train_rl(model_name='test-rl')
 
     def test_predict_policy(self):
-        pass
+        y = predict_seqtoseq_beam('Hi!', model_name='test-seqtoseq-attn')
+        print(y)
