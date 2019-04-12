@@ -54,10 +54,10 @@ class TestModel(object):
         y = predict_seqtoseq('Hi!', model_name='test-seqtoseq')
         print(y)
 
-    @pytest.mark.run_this
     def test_train_policy(self):
         train_model.train_rl(model_name='test-rl')
 
+    @pytest.mark.run_this
     def test_predict_policy(self):
         y = predict_seqtoseq_beam('Hi!', model_name='test-seqtoseq-attn')
         print(y)

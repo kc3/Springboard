@@ -291,6 +291,69 @@ class SeqToSeqModel:
 
         raise AssertionError('Prediction batch processing failed.')
 
+    def predict_beam_load_model(self, session, data_manager: DataManager):
+        """Loads model for Predict beam method."""
+
+        # Load the model inputs
+        input_data, targets, lr, input_sequence_length, output_sequence_length = self.model_inputs()
+
+        # Model Graph Variables
+        self.model_graph_vars(data_manager)
+
+        # Create Encoder
+        encoder_output, encoder_state = self._get_encoder(input_data, input_sequence_length)
+
+        # Create Decoder for Training
+        beam_output = self._get_decoder_infer_beam(
+            encoder_output, encoder_state, input_sequence_length, data_manager)
+
+        session.run(tf.global_variables_initializer())
+
+        # Restore session
+        saver = tf.train.Saver()
+        save_path = self._get_model_save_path()
+        saver.restore(session, save_path)
+        logging.info('Saved model {0} loaded from disk.'.format(save_path))
+
+        return beam_output, encoder_state
+
+    def predict_beam_responses(self, session, encoder_state, beam_output, input_question, data_manager: DataManager):
+        """Gets beam responses for given question."""
+        # Add empty questions so the the input_data is the correct shape
+        questions = [input_question] * self.batch_size
+
+        # Add empty answers so the the input_data is the correct shape
+        single_input_answer = [data_manager.answers_vocab_to_int['<GO>'],
+                               data_manager.answers_vocab_to_int['<PAD>']]
+        answers = [single_input_answer] * self.batch_size
+
+        # Get Placeholders
+        graph = tf.get_default_graph()
+        input_data = graph.get_tensor_by_name('Inputs/input_data:0')
+        targets = graph.get_tensor_by_name('Inputs/targets:0')
+        lr = graph.get_tensor_by_name('Inputs/learning_rate:0')
+        input_sequence_length = graph.get_tensor_by_name('Inputs/input_sequence_length:0')
+        output_sequence_length = graph.get_tensor_by_name('Inputs/output_sequence_length:0')
+
+        for batch_i, \
+            (pad_questions_batch, pad_answers_batch, q_sequence_length_batch, a_sequence_length_batch) in enumerate(
+            self.batch_data(questions, answers, self.batch_size,
+                            data_manager.questions_vocab_to_int, data_manager.answers_vocab_to_int)):
+            # Build feed_dict
+            feed_dict = {
+                input_data: pad_questions_batch,
+                targets: pad_answers_batch,
+                lr: self.learning_rate,
+                input_sequence_length: q_sequence_length_batch,
+                output_sequence_length: a_sequence_length_batch
+            }
+
+            # Get prediction
+            output = session.run([beam_output], feed_dict=feed_dict)
+            return output[0].scores, output[0].predicted_ids, output[0].parent_ids, encoder_state
+
+        raise AssertionError('Prediction batch processing failed.')
+
     def predict_beam(self, input_question, data_manager: DataManager):
         """Predict a response for the given question"""
 
@@ -300,62 +363,11 @@ class SeqToSeqModel:
         # Start the session
         with tf.Session() as session:
 
-            # Load the model inputs
-            input_data, targets, lr, input_sequence_length, output_sequence_length = self.model_inputs()
+            # Load model
+            beam_output, encoder_state = self.predict_beam_load_model(session, data_manager)
 
-            # Model Graph Variables
-            self.model_graph_vars(data_manager)
-
-            # Create Encoder
-            encoder_output, encoder_state = self._get_encoder(input_data, input_sequence_length)
-
-            # Create Decoder for Training
-            beam_output = self._get_decoder_infer_beam(
-                encoder_output, encoder_state, input_sequence_length, data_manager)
-
-            session.run(tf.global_variables_initializer())
-
-            # Restore session
-            saver = tf.train.Saver()
-            save_path = self._get_model_save_path()
-            saver.restore(session, save_path)
-            logging.info('Saved model {0} loaded from disk.'.format(save_path))
-
-            # Add empty questions so the the input_data is the correct shape
-            questions = [input_question] * self.batch_size
-
-            # Add empty answers so the the input_data is the correct shape
-            single_input_answer = [data_manager.answers_vocab_to_int['<GO>'],
-                                   data_manager.answers_vocab_to_int['<PAD>']]
-            answers = [single_input_answer] * self.batch_size
-
-            # Get Placeholders
-            graph = tf.get_default_graph()
-            input_data = graph.get_tensor_by_name('Inputs/input_data:0')
-            targets = graph.get_tensor_by_name('Inputs/targets:0')
-            lr = graph.get_tensor_by_name('Inputs/learning_rate:0')
-            input_sequence_length = graph.get_tensor_by_name('Inputs/input_sequence_length:0')
-            output_sequence_length = graph.get_tensor_by_name('Inputs/output_sequence_length:0')
-
-            for batch_i, \
-                (pad_questions_batch, pad_answers_batch, q_sequence_length_batch, a_sequence_length_batch) in enumerate(
-                    self.batch_data(questions, answers, self.batch_size,
-                                    data_manager.questions_vocab_to_int, data_manager.answers_vocab_to_int)):
-
-                # Build feed_dict
-                feed_dict = {
-                    input_data: pad_questions_batch,
-                    targets: pad_answers_batch,
-                    lr: self.learning_rate,
-                    input_sequence_length: q_sequence_length_batch,
-                    output_sequence_length: a_sequence_length_batch
-                }
-
-                # Get prediction
-                output = session.run([beam_output], feed_dict=feed_dict)
-                return output[0].scores, output[0].predicted_ids, output[0].parent_ids
-
-        raise AssertionError('Prediction batch processing failed.')
+            # Predict beam responses
+            return self.predict_beam_responses(session, encoder_state, beam_output, input_question, data_manager)
 
     def model_inputs(self):
         """Create placeholders for inputs to the model"""
