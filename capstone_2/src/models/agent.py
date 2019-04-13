@@ -24,17 +24,42 @@ class PolicyAgent:
         # Dull responses
         self.dull_responses = self.data_manager.get_cornell_dull_responses()
 
+        # Initialize a default graph and session
+        self.graph = tf.Graph()
+        self.session = tf.Session(graph=self.graph)
+
+        # Create seq2seq model instance
+        self.seq2seq_model = SeqToSeqModel(model_name=self.seq2seq_model_name)
+
+        # Create model variables
+        cost, train_op, beam_output = self._create_model_graph()
+        self.cost = cost
+        self.train_op = train_op
+        self.beam_output = beam_output
+
         logging.info('Agent {0} initialized.'.format(self.agent_name))
 
     def play(self, state):
         """Play each turn."""
         last_response, request = state
 
-        # Generate new responses
-        responses = [
-            '{0} {1} {2}'.format(self.agent_name, last_response, 'fizz'),
-            '{0} {1} {2}'.format(self.agent_name, last_response, 'buzz')
-        ]
+        responses = []
+
+        with self.graph.as_default() as g:
+            # Predict beam responses
+            scores, predicted_ids, parent_ids = self.seq2seq_model.predict_beam_responses(
+                self.session, self.beam_output, request, self.data_manager)
+
+            for i in range(self.seq2seq_model.beam_width):
+                a_tokens = []
+                for j in range(self.seq2seq_model.max_sequence_length):
+                    token = predicted_ids[0][j][i]
+                    if token == self.data_manager.answers_vocab_to_int['<EOS>']:
+                        break
+                    a_tokens.append(token)
+
+                # Convert answer to text
+                responses.append(a_tokens)
 
         return responses
 
@@ -44,7 +69,67 @@ class PolicyAgent:
 
     def save(self):
         """Saves model"""
+        # self._save_model(self.session)
         pass
+
+    def close(self):
+        """Closes session object"""
+        self.session.close()
+
+    def _create_model_graph(self):
+
+        """Creates seq2seq model graph"""
+        with self.graph.as_default():
+
+            # Load the model inputs
+            input_data, targets, lr, input_sequence_length, output_sequence_length = self.seq2seq_model.model_inputs()
+
+            # Model Graph Variables
+            self.seq2seq_model.model_graph_vars(self.data_manager)
+
+            # Create Encoder
+            encoder_output, encoder_state = self.seq2seq_model._get_encoder(input_data, input_sequence_length)
+
+            # Create Decoder for Training
+            train_logits = self.seq2seq_model._get_decoder_train(
+                targets, encoder_output, encoder_state, input_sequence_length, self.data_manager)
+
+            with tf.name_scope("optimization"):
+                # Compute weight mask
+                mask = tf.sequence_mask(output_sequence_length,
+                                        self.seq2seq_model.max_sequence_length, dtype=tf.float32)
+
+                # Loss function
+                cost = tf.contrib.seq2seq.sequence_loss(
+                    train_logits,
+                    targets,
+                    mask)
+
+                # Optimizer
+                optimizer = tf.train.AdamOptimizer(self.seq2seq_model.learning_rate)
+
+                # Gradient Clipping
+                gradients = optimizer.compute_gradients(cost)
+                capped_gradients = [
+                    (tf.clip_by_value(grad, -5., 5.), var) for grad, var in gradients if grad is not None]
+                train_op = optimizer.apply_gradients(capped_gradients)
+
+            # Create beam decoder for generating responses
+            beam_output = self.seq2seq_model._get_decoder_infer_beam(
+                encoder_output, encoder_state, input_sequence_length, self.data_manager)
+
+            # Initialize the model variables
+            self.session.run(tf.global_variables_initializer())
+
+            # Restore session
+            saver = tf.train.Saver()
+            save_path = self._get_model_save_path()
+            saver.restore(self.session, save_path)
+            logging.info('Saved model {0} loaded from disk.'.format(save_path))
+
+            logging.info('SeqtoSeq Model initialized for agent {0}'.format(self.agent_name))
+
+            return cost, train_op, beam_output
 
     def _loss(self, logits, labels):
         """Loss function used for optimization. This is negative log reward."""

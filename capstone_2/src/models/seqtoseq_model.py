@@ -28,6 +28,7 @@ class SeqToSeqModel:
                  min_learning_rate=0.0001,
                  keep_probability=0.75,
                  max_sequence_length=21,
+                 beam_width =5,
                  model_name=None
                  ):
 
@@ -64,6 +65,9 @@ class SeqToSeqModel:
 
         # Maximum sequence length
         self.max_sequence_length = max_sequence_length
+
+        # Beam width
+        self.beam_width = beam_width
 
         # Model Name
         self.model_name = model_name
@@ -315,9 +319,9 @@ class SeqToSeqModel:
         saver.restore(session, save_path)
         logging.info('Saved model {0} loaded from disk.'.format(save_path))
 
-        return beam_output, encoder_state
+        return beam_output
 
-    def predict_beam_responses(self, session, encoder_state, beam_output, input_question, data_manager: DataManager):
+    def predict_beam_responses(self, session, beam_output, input_question, data_manager: DataManager):
         """Gets beam responses for given question."""
         # Add empty questions so the the input_data is the correct shape
         questions = [input_question] * self.batch_size
@@ -350,7 +354,7 @@ class SeqToSeqModel:
 
             # Get prediction
             output = session.run([beam_output], feed_dict=feed_dict)
-            return output[0].scores, output[0].predicted_ids, output[0].parent_ids, encoder_state
+            return output[0].scores, output[0].predicted_ids, output[0].parent_ids
 
         raise AssertionError('Prediction batch processing failed.')
 
@@ -364,10 +368,10 @@ class SeqToSeqModel:
         with tf.Session() as session:
 
             # Load model
-            beam_output, encoder_state = self.predict_beam_load_model(session, data_manager)
+            beam_output = self.predict_beam_load_model(session, data_manager)
 
             # Predict beam responses
-            return self.predict_beam_responses(session, encoder_state, beam_output, input_question, data_manager)
+            return self.predict_beam_responses(session, beam_output, input_question, data_manager)
 
     def model_inputs(self):
         """Create placeholders for inputs to the model"""
@@ -543,7 +547,7 @@ class SeqToSeqModel:
     def decode_beam(self, vocab_size, input_sequence_length, encoder_output, encoder_state,
                     dec_embeddings, start_token, end_token, scope, reuse=None):
 
-        beam_width = 5
+        beam_width = self.beam_width
 
         with tf.variable_scope(scope, reuse=reuse):
             lstm = tf.contrib.rnn.BasicLSTMCell(self.rnn_size)
@@ -592,7 +596,7 @@ class SeqToSeqModel:
                 start_tokens=tf.fill([self.batch_size], start_token),
                 end_token=end_token,
                 initial_state=attention_zero,
-                beam_width=5,
+                beam_width=self.beam_width,
                 output_layer=projection_layer,
                 length_penalty_weight=0.0)
 

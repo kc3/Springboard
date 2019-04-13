@@ -80,8 +80,8 @@ def predict_seqtoseq_beam(question, model_name=None):
     model = SeqToSeqModel(model_name=model_name)
 
     # Make Prediction
-    scores, predicted_ids, parent_ids, _ = model.predict_beam(q_tokens, d)
-    beam_width = 5
+    scores, predicted_ids, parent_ids = model.predict_beam(q_tokens, d)
+    beam_width = model.beam_width
     answers = []
     for i in range(beam_width):
         a_tokens = []

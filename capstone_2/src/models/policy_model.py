@@ -112,7 +112,10 @@ class PolicyGradientModel:
                 # Pop the first state
                 agent_id, last_response, request, turn = state_queue.popleft()
 
-                logging.info('Game: Agent: {0}, Turn: {1} : {2}, {3}'.format(agent_id, turn, last_response, request))
+                logging.info('Game: Agent: {0}, Turn: {1} : {2}, {3}'.format(agent_id,
+                                                                             turn,
+                                                                             self._answer_from_tokens(last_response),
+                                                                             self._answer_from_tokens(request)))
 
                 # Check if the agent needs to play further
                 if turn < num_turns*num_agents:
@@ -143,4 +146,16 @@ class PolicyGradientModel:
             agents[best_agent].save()
             logging.info('Saved model for best agent: {0} with loss: {1}'.format(best_agent, best_score))
 
+        # Close agents
+        for agent_id in range(num_agents):
+            agents[agent_id].close()
+
         return total_losses
+
+    def _answer_from_tokens(self, tokens):
+        """Converts integers tokens to text."""
+        if tokens is None:
+            return None
+
+        answer = self.data_manager.answer_from_tokens(tokens)
+        return answer
