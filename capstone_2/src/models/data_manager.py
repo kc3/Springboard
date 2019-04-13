@@ -451,7 +451,8 @@ class DataManager:
             "I do not know that",
             "I am not sure",
             "I do not think that",
-            "I am sorry"
+            "I am sorry",
+            "I do not know what you mean"
         ]
 
         q_tokens = []
