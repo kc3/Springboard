@@ -12,10 +12,12 @@ class PolicyAgent:
 
     def __init__(self,
                  seq2seq_model_name='test-policy',
+                 finish_epochs=10,
                  agent_name=None):
 
         # Model parameters
         self.seq2seq_model_name = seq2seq_model_name
+        self.finish_epochs = finish_epochs
         self.agent_name = agent_name
 
         # Initialize Data Manager
@@ -24,18 +26,26 @@ class PolicyAgent:
         # Dull responses
         self.dull_responses = self.data_manager.get_cornell_dull_responses()
 
+        # Gather data for finish phase training
+        self.questions = []
+        self.answers = []
+        self.rewards = []
+
         # Initialize a default graph and session
         self.graph = tf.Graph()
         self.session = tf.Session(graph=self.graph)
 
         # Create seq2seq model instance
-        self.seq2seq_model = SeqToSeqModel(model_name=self.seq2seq_model_name)
+        self.seq2seq_model = SeqToSeqModel(
+            epochs=finish_epochs,
+            model_name=self.seq2seq_model_name)
 
         # Create model variables
-        cost, train_op, beam_output = self._create_model_graph()
+        cost, train_op, beam_output, encoder_output = self._create_model_graph()
         self.cost = cost
         self.train_op = train_op
         self.beam_output = beam_output
+        self.encoder_output = encoder_output
 
         logging.info('Agent {0} initialized.'.format(self.agent_name))
 
@@ -45,26 +55,49 @@ class PolicyAgent:
 
         responses = []
 
-        with self.graph.as_default() as g:
+        with self.graph.as_default():
+
             # Predict beam responses
             scores, predicted_ids, parent_ids = self.seq2seq_model.predict_beam_responses(
                 self.session, self.beam_output, request, self.data_manager)
 
+            # Prepare responses
             for i in range(self.seq2seq_model.beam_width):
                 a_tokens = []
                 for j in range(self.seq2seq_model.max_sequence_length):
                     token = predicted_ids[0][j][i]
+                    a_tokens.append(token)
                     if token == self.data_manager.answers_vocab_to_int['<EOS>']:
                         break
-                    a_tokens.append(token)
 
-                # Convert answer to text
                 responses.append(a_tokens)
+
+            # Add to internal state for finish phase
+            for response in responses:
+                self.questions.append(request)
+                self.answers.append(response)
+                self.rewards.append(1.)
 
         return responses
 
     def finish(self):
-        """Review rewards and optimize network."""
+        """Review rewards and optimize graph once conversation is over."""
+
+        logging.info('Started training agent: {0}'.format(self.agent_name))
+
+        # Change model name to save agent model state
+        old_model_name = self.seq2seq_model_name
+        self.seq2seq_model.model_name = self.seq2seq_model_name + self.agent_name
+
+        with self.graph.as_default():
+            train_loss, valid_loss = self.seq2seq_model.train(
+                self.session, self.questions, self.answers, self.train_op, self.cost, self.data_manager, save=True)
+
+        logging.info('Training Loss: {0}, Validation Loss: {1}'.format(train_loss, valid_loss))
+
+        # Change the name back, best model will overwrite the policy model for next iteration.
+        self.seq2seq_model.model_name = old_model_name
+
         return -1*np.random.random()
 
     def save(self):
@@ -129,7 +162,7 @@ class PolicyAgent:
 
             logging.info('SeqtoSeq Model initialized for agent {0}'.format(self.agent_name))
 
-            return cost, train_op, beam_output
+            return cost, train_op, beam_output, encoder_output
 
     def _loss(self, logits, labels):
         """Loss function used for optimization. This is negative log reward."""

@@ -10,7 +10,7 @@ class PolicyGradientModel:
     """Implementation of the policy gradient model."""
 
     def __init__(self,
-                 turns=2,
+                 turns=5,
                  actions=5,
                  epochs=100,
                  seq2seq_model_name='test-policy',

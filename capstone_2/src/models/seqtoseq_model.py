@@ -79,37 +79,6 @@ class SeqToSeqModel:
 
         sorted_questions = data_manager.sorted_questions
         sorted_answers = data_manager.sorted_answers
-        questions_vocab_to_int = data_manager.questions_vocab_to_int
-        answers_vocab_to_int = data_manager.answers_vocab_to_int
-
-        # Validate the training with 10% of the data
-        train_valid_split = int(len(sorted_questions) * 0.15)
-
-        # Split the questions and answers into training and validating data
-        train_questions = sorted_questions[train_valid_split:]
-        train_answers = sorted_answers[train_valid_split:]
-
-        valid_questions = sorted_questions[:train_valid_split]
-        valid_answers = sorted_answers[:train_valid_split]
-
-        # Check training loss after every 100 batches
-        display_step = 100
-
-        # Early Stop Initialization
-        stop_early = 0
-
-        # If the validation loss does decrease in 5 consecutive checks, stop training
-        stop = 5
-
-        # Modulus for checking validation loss
-        validation_check = ((len(train_questions)) // self.batch_size // 2) - 1
-
-        # Record the training loss for each display step
-        total_train_loss = 0
-
-        # Record the validation loss for saving improvements in the model
-        summary_valid_loss = []
-        learning_rate = self.learning_rate
 
         # Start the session
         with tf.Graph().as_default(), tf.Session() as session:
@@ -148,84 +117,155 @@ class SeqToSeqModel:
 
             session.run(tf.global_variables_initializer())
 
-            for epoch_i in range(1, self.epochs + 1):
-                shuffled_questions, shuffled_answers = self._shuffle_training_data(train_questions, train_answers)
+            # Train
+            summary_train_loss, summary_valid_loss = self.train(
+                session, sorted_questions, sorted_answers, train_op, cost, data_manager)
 
-                for batch_i, \
-                    (questions_batch, answers_batch, q_sequence_length_batch, a_sequence_length_batch) in enumerate(
-                        self.batch_data(shuffled_questions,
-                                        shuffled_answers,
-                                        self.batch_size,
-                                        questions_vocab_to_int,
-                                        answers_vocab_to_int)):
-
-                    feed_dict = {
-                        input_data: questions_batch,
-                        targets: answers_batch,
-                        lr: learning_rate,
-                        input_sequence_length: q_sequence_length_batch,
-                        output_sequence_length: a_sequence_length_batch
-                    }
-
-                    start_time = time.time()
-                    _, loss = session.run([train_op, cost], feed_dict=feed_dict)
-
-                    total_train_loss += loss
-                    end_time = time.time()
-                    batch_time = end_time - start_time
-
-                    if batch_i % display_step == 0:
-                        print('Epoch {:>3}/{} Batch {:>4}/{} - Loss: {:>6.3f}, Seconds: {:>4.2f}'
-                              .format(epoch_i,
-                                      self.epochs,
-                                      batch_i,
-                                      len(train_questions) // self.batch_size,
-                                      total_train_loss / display_step,
-                                      batch_time * display_step))
-                        total_train_loss = 0
-
-                    if batch_i % validation_check == 0 and batch_i > 0:
-                        total_valid_loss = 0
-                        start_time = time.time()
-                        for batch_ii, \
-                            (questions_batch_ii, answers_batch_ii,
-                             q_sequence_length_batch_ii, a_sequence_length_batch_ii) in \
-                                enumerate(self.batch_data(valid_questions, valid_answers, self.batch_size,
-                                                          questions_vocab_to_int, answers_vocab_to_int)):
-                            valid_loss = session.run(
-                                cost, {input_data: questions_batch_ii,
-                                       targets: answers_batch_ii,
-                                       lr: learning_rate,
-                                       input_sequence_length: q_sequence_length_batch_ii,
-                                       output_sequence_length: a_sequence_length_batch_ii})
-                            total_valid_loss += valid_loss
-                        end_time = time.time()
-                        batch_time = end_time - start_time
-                        avg_valid_loss = total_valid_loss / (len(valid_questions) / self.batch_size)
-                        print('Valid Loss: {:>6.3f}, Seconds: {:>5.2f}'.format(avg_valid_loss, batch_time))
-
-                        # Reduce learning rate, but not below its minimum value
-                        learning_rate *= self.learning_rate_decay
-                        if learning_rate < self.min_learning_rate:
-                            learning_rate = self.min_learning_rate
-
-                        summary_valid_loss.append(avg_valid_loss)
-                        if avg_valid_loss <= min(summary_valid_loss):
-                            print('New Record!')
-                            stop_early = 0
-                            self._save_model(session)
-
-                        else:
-                            print("No Improvement.")
-                            stop_early += 1
-                            if stop_early == stop:
-                                break
-
-                if stop_early == stop:
-                    print("Stopping Training.")
-                    break
+            logging.info('Summary Train Loss: \n{0}'.format(summary_train_loss))
+            logging.info('Summary Valid Loss: \n{0}'.format(summary_valid_loss))
 
         return
+
+    def train(self, session, sorted_questions, sorted_answers, train_op, cost, data_manager: DataManager, save=True):
+
+        questions_vocab_to_int = data_manager.questions_vocab_to_int
+        answers_vocab_to_int = data_manager.answers_vocab_to_int
+
+        # Validate the training with 10% of the data
+        train_valid_split = int(len(sorted_questions) * 0.15)
+
+        # Split the questions and answers into training and validating data
+        train_questions = sorted_questions[train_valid_split:]
+        train_answers = sorted_answers[train_valid_split:]
+
+        valid_questions = sorted_questions[:train_valid_split]
+        valid_answers = sorted_answers[:train_valid_split]
+
+        # Check training loss after every 100 batches
+        display_step = 100
+
+        # Early Stop Initialization
+        stop_early = 0
+
+        # If the validation loss does decrease in 5 consecutive checks, stop training
+        stop = 5
+
+        # Modulus for checking validation loss
+        validation_check = ((len(train_questions)) // self.batch_size // 2) - 1
+
+        # Record the training loss for each display step
+        total_train_loss = 0
+        total_summary_train_loss = 0.
+        min_valid_loss = 0.
+
+        # Record the validation loss for saving improvements in the model
+        summary_train_loss = []
+        summary_valid_loss = []
+        learning_rate = self.learning_rate
+
+        # Get Placeholders
+        graph = tf.get_default_graph()
+        input_data = graph.get_tensor_by_name('Inputs/input_data:0')
+        targets = graph.get_tensor_by_name('Inputs/targets:0')
+        lr = graph.get_tensor_by_name('Inputs/learning_rate:0')
+        input_sequence_length = graph.get_tensor_by_name('Inputs/input_sequence_length:0')
+        output_sequence_length = graph.get_tensor_by_name('Inputs/output_sequence_length:0')
+
+        for epoch_i in range(1, self.epochs + 1):
+            shuffled_questions, shuffled_answers = self._shuffle_training_data(train_questions, train_answers)
+
+            for batch_i, \
+                (questions_batch, answers_batch, q_sequence_length_batch, a_sequence_length_batch) in enumerate(
+                 self.batch_data(shuffled_questions,
+                                 shuffled_answers,
+                                 self.batch_size,
+                                 questions_vocab_to_int,
+                                 answers_vocab_to_int)):
+
+                feed_dict = {
+                    input_data: questions_batch,
+                    targets: answers_batch,
+                    lr: learning_rate,
+                    input_sequence_length: q_sequence_length_batch,
+                    output_sequence_length: a_sequence_length_batch
+                }
+
+                start_time = time.time()
+                _, loss = session.run([train_op, cost], feed_dict=feed_dict)
+
+                total_train_loss += loss
+                total_summary_train_loss += loss
+                end_time = time.time()
+                batch_time = end_time - start_time
+
+                if batch_i % display_step == 0:
+                    print('Epoch {:>3}/{} Batch {:>4}/{} - Loss: {:>6.3f}, Seconds: {:>4.2f}'
+                          .format(epoch_i,
+                                  self.epochs,
+                                  batch_i,
+                                  len(train_questions) // self.batch_size,
+                                  total_train_loss / display_step,
+                                  batch_time * display_step))
+                    logging.info('Epoch {:>3}/{} Batch {:>4}/{} - Loss: {:>6.3f}, Seconds: {:>4.2f}'
+                                 .format(epoch_i,
+                                         self.epochs,
+                                         batch_i,
+                                         len(train_questions) // self.batch_size,
+                                         total_train_loss / display_step,
+                                         batch_time * display_step))
+                    total_train_loss = 0
+
+                if batch_i % validation_check == 0 and batch_i > 0:
+                    total_valid_loss = 0
+                    start_time = time.time()
+                    for batch_ii, \
+                        (questions_batch_ii, answers_batch_ii,
+                         q_sequence_length_batch_ii, a_sequence_length_batch_ii) in \
+                            enumerate(self.batch_data(valid_questions, valid_answers, self.batch_size,
+                                                      questions_vocab_to_int, answers_vocab_to_int)):
+                        valid_loss = session.run(
+                            cost, {input_data: questions_batch_ii,
+                                   targets: answers_batch_ii,
+                                   lr: learning_rate,
+                                   input_sequence_length: q_sequence_length_batch_ii,
+                                   output_sequence_length: a_sequence_length_batch_ii})
+                        total_valid_loss += valid_loss
+                    end_time = time.time()
+                    batch_time = end_time - start_time
+                    avg_valid_loss = total_valid_loss / (len(valid_questions) / self.batch_size)
+                    print('Valid Loss: {:>6.3f}, Seconds: {:>5.2f}'.format(avg_valid_loss, batch_time))
+                    logging.info('Valid Loss: {:>6.3f}, Seconds: {:>5.2f}'.format(avg_valid_loss, batch_time))
+
+                    avg_train_loss = total_summary_train_loss / (validation_check * self.batch_size)
+                    summary_train_loss.append(avg_train_loss)
+
+                    # Reduce learning rate, but not below its minimum value
+                    learning_rate *= self.learning_rate_decay
+                    if learning_rate < self.min_learning_rate:
+                        learning_rate = self.min_learning_rate
+
+                    summary_valid_loss.append(avg_valid_loss)
+                    if len(summary_valid_loss) == 1 or min_valid_loss > avg_valid_loss:
+                        print('New Record!')
+                        logging.info('New Record!')
+                        min_valid_loss = avg_valid_loss
+                        stop_early = 0
+                        if save:
+                            self._save_model(session)
+
+                    else:
+                        print("No Improvement.")
+                        logging.info("No Improvement.")
+                        stop_early += 1
+                        if stop_early == stop:
+                            break
+
+            if stop_early == stop:
+                print("Stopping Training.")
+                logging.info("Stopping Training.")
+                break
+
+        return summary_train_loss, summary_valid_loss
 
     def predict(self, input_question, data_manager: DataManager):
         """Predict a response for the given question"""
@@ -341,8 +381,8 @@ class SeqToSeqModel:
 
         for batch_i, \
             (pad_questions_batch, pad_answers_batch, q_sequence_length_batch, a_sequence_length_batch) in enumerate(
-            self.batch_data(questions, answers, self.batch_size,
-                            data_manager.questions_vocab_to_int, data_manager.answers_vocab_to_int)):
+             self.batch_data(questions, answers, self.batch_size,
+                             data_manager.questions_vocab_to_int, data_manager.answers_vocab_to_int)):
             # Build feed_dict
             feed_dict = {
                 input_data: pad_questions_batch,
