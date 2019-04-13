@@ -56,12 +56,9 @@ def train_rl(model_name=None, epochs=100):
 
     logging.info('RL Model Training started.')
 
-    d = DataManager()
-    logging.info('Cornell Data Set loaded...')
-
     # Train individual agent
     s_model = PolicyGradientModel(model_name=model_name, epochs=epochs)
-    s_model.fit(d)
+    s_model.fit()
     logging.info('Finished training RL Model...')
 
 
