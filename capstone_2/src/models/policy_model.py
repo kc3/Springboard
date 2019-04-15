@@ -1,7 +1,9 @@
 
 import logging
+import os
 import numpy as np
 from collections import deque
+import tensorflow as tf
 from src.models.data_manager import DataManager
 from src.models.agent import PolicyAgent
 
@@ -12,7 +14,7 @@ class PolicyGradientModel:
     def __init__(self,
                  turns=5,
                  actions=5,
-                 epochs=100,
+                 epochs=1,
                  seq2seq_model_name='test-policy',
                  model_name=None):
         """Model Parameters Init."""
@@ -120,7 +122,11 @@ class PolicyGradientModel:
                 # Check if the agent needs to play further
                 if turn < num_turns*num_agents:
                     # Get responses from the agent
-                    responses = agents[agent_id].play((last_response, request))
+                    responses, probs, rewards = agents[agent_id].play((last_response, request))
+
+                    logging.info(
+                        'Agent returned:\nResponses: {0}\nProbabilities: {1}\nRewards: {2}'.format(
+                            responses, probs, rewards))
 
                     # Add states for the next agent
                     next_agent_id = (agent_id + 1) % num_agents
@@ -129,7 +135,7 @@ class PolicyGradientModel:
 
             # Finish
             for agent_id in range(num_agents):
-                game_losses[agent_id] += agents[agent_id].finish()
+                game_losses[agent_id] += np.random.random()
 
             logging.info('Game losses by agent: {0}'.format(game_losses))
 
@@ -137,14 +143,10 @@ class PolicyGradientModel:
         total_losses = sum(game_losses.values())
         logging.info('Total losses: {0}, Previous Min loss: {1}'.format(total_losses, min_turn_loss))
         if total_losses < min_turn_loss:
-            best_agent = 0
             best_score = game_losses[0]
             for agent_id in range(num_agents):
                 if game_losses[agent_id] < best_score:
-                    best_agent = agent_id
                     best_score = game_losses[agent_id]
-            agents[best_agent].save()
-            logging.info('Saved model for best agent: {0} with loss: {1}'.format(best_agent, best_score))
 
         # Close agents
         for agent_id in range(num_agents):
@@ -159,3 +161,39 @@ class PolicyGradientModel:
 
         answer = self.data_manager.answer_from_tokens(tokens)
         return answer
+
+    def _save_model(self, session):
+        """ Saves model to the disk. Should be called only by fit.
+
+        :param session:
+            Valid session object.
+        :return:
+            None.
+        """
+
+        # Save model for tensorflow reuse for next epoch
+        saver = tf.train.Saver()
+        save_path = self._get_model_save_path()
+        saver.save(session, save_path)
+
+    def _get_save_dir(self):
+        """ Checks for save directory and builds it if necessary.
+
+        :return:
+             A string containing save directory path
+        """
+        abs_path = os.path.abspath(os.path.dirname(__file__))
+        def_models_path = os.path.join(abs_path, '../../models/')
+        save_dir = def_models_path + self.seq2seq_model_name
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
+        return save_dir
+
+    def _get_model_save_path(self):
+        """ Builds save path for the model.
+
+        :return:
+            A string containing model save path.
+        """
+        assert self.seq2seq_model_name is not None
+        return '{0}/{1}.ckpt'.format(self._get_save_dir(), self.seq2seq_model_name)

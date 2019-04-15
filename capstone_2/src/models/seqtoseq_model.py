@@ -394,7 +394,7 @@ class SeqToSeqModel:
 
             # Get prediction
             output = session.run([beam_output], feed_dict=feed_dict)
-            return output[0].scores, output[0].predicted_ids, output[0].parent_ids
+            return output[0].scores[0], output[0].predicted_ids[0], output[0].parent_ids[0]
 
         raise AssertionError('Prediction batch processing failed.')
 

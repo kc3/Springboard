@@ -86,7 +86,7 @@ def predict_seqtoseq_beam(question, model_name=None):
     for i in range(beam_width):
         a_tokens = []
         for j in range(model.max_sequence_length):
-            token = predicted_ids[0][j][i]
+            token = predicted_ids[j][i]
             if token == d.answers_vocab_to_int['<EOS>']:
                 break
             a_tokens.append(token)

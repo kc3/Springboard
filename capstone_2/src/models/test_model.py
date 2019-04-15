@@ -9,6 +9,7 @@ from datetime import datetime
 from src.models.data_manager import DataManager
 from src.models import train_model
 from src.models.predict_model import predict_seqtoseq, predict_seqtoseq_beam
+from src.models.agent import PolicyAgent
 
 #
 # Configure logging
@@ -57,7 +58,16 @@ class TestModel(object):
     def test_train_policy(self):
         train_model.train_rl(model_name='test-rl')
 
-    @pytest.mark.run_this
     def test_predict_policy(self):
         y = predict_seqtoseq_beam('Hi!', model_name='test-seqtoseq-attn')
         print(y)
+
+    @pytest.mark.run_this
+    def test_policy_reward(self):
+        data_manager = DataManager()
+        agent = PolicyAgent(agent_name='test-agent')
+        last_response = data_manager.question_to_tokens('I am fine. How are you?')
+        request = data_manager.question_to_tokens('Great. How is the weather today?')
+        responses = agent.play((last_response, request))
+        logging.info(responses)
+        assert len(responses) > 0

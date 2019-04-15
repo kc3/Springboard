@@ -12,12 +12,10 @@ class PolicyAgent:
 
     def __init__(self,
                  seq2seq_model_name='test-policy',
-                 finish_epochs=10,
                  agent_name=None):
 
         # Model parameters
         self.seq2seq_model_name = seq2seq_model_name
-        self.finish_epochs = finish_epochs
         self.agent_name = agent_name
 
         # Initialize Data Manager
@@ -26,18 +24,12 @@ class PolicyAgent:
         # Dull responses
         self.dull_responses = self.data_manager.get_cornell_dull_responses()
 
-        # Gather data for finish phase training
-        self.questions = []
-        self.answers = []
-        self.rewards = []
-
         # Initialize a default graph and session
         self.graph = tf.Graph()
         self.session = tf.Session(graph=self.graph)
 
         # Create seq2seq model instance
         self.seq2seq_model = SeqToSeqModel(
-            epochs=finish_epochs,
             model_name=self.seq2seq_model_name)
 
         # Create model variables
@@ -57,57 +49,32 @@ class PolicyAgent:
 
         with self.graph.as_default():
 
-            # Get Encoder Output
-            encoder_output_prev = self.seq2seq_model.get_encoded_representation(
-                self.session, self.encoder_output, last_response, self.data_manager)
-
             # Predict beam responses
             scores, predicted_ids, parent_ids = self.seq2seq_model.predict_beam_responses(
                 self.session, self.beam_output, request, self.data_manager)
+
+            # Prepare Probabilities (Softmax)
+            exp_scores = np.exp(np.asarray(scores)[-1:][0])
+            probs = exp_scores / sum(exp_scores)
+            # logging.info('Probabilities: {0}'.format(probs))
 
             # Prepare responses
             for i in range(self.seq2seq_model.beam_width):
                 a_tokens = []
                 for j in range(self.seq2seq_model.max_sequence_length):
-                    token = predicted_ids[0][j][i]
+                    token = predicted_ids[j][i]
                     a_tokens.append(token)
                     if token == self.data_manager.answers_vocab_to_int['<EOS>']:
                         break
 
                 responses.append(a_tokens)
 
-            # Add to internal state for finish phase
-            for response in responses:
-                self.questions.append(request)
-                self.answers.append(response)
-                self.rewards.append(1.)
+            # Prepare Rewards
+            rewards = []
+            for idx, response in enumerate(responses):
+                rewards.append(self._reward(last_response, request, response, probs[idx]))
 
-        return responses
-
-    def finish(self):
-        """Review rewards and optimize graph once conversation is over."""
-
-        # logging.info('Started training agent: {0}'.format(self.agent_name))
-        #
-        # # Change model name to save agent model state
-        # old_model_name = self.seq2seq_model_name
-        # self.seq2seq_model.model_name = self.seq2seq_model_name + self.agent_name
-        #
-        # with self.graph.as_default():
-        #     train_loss, valid_loss = self.seq2seq_model.train(
-        #         self.session, self.questions, self.answers, self.train_op, self.cost, self.data_manager, save=True)
-        #
-        # logging.info('Training Loss: {0}, Validation Loss: {1}'.format(train_loss, valid_loss))
-        #
-        # # Change the name back, best model will overwrite the policy model for next iteration.
-        # self.seq2seq_model.model_name = old_model_name
-
-        return -1*np.random.random()
-
-    def save(self):
-        """Saves model"""
-        # self._save_model(self.session)
-        pass
+        return responses, probs, rewards
 
     def close(self):
         """Closes session object"""
@@ -168,39 +135,81 @@ class PolicyAgent:
 
             return cost, train_op, beam_output, encoder_output
 
-    def _loss(self, logits, labels):
-        """Loss function used for optimization. This is negative log reward."""
-        pass
-
-    def _reward(self):
+    def _reward(self, last_response, request, response, prob):
         """Total reward for this response."""
-        pass
+        weights = [0.25, 0.25, 0.5]
 
-    def _ease_of_answering(self, dull_responses, response):
+        rew_1 = self._ease_of_answering(response, prob)
+        rew_2 = self._information_flow(last_response, response)
+        rew_3 = self._semantic_coherence(request, response, prob)
+
+        rew_total = np.sum(np.multiply(weights, [rew_1, rew_2, rew_3]))
+
+        # logging.info('Total reward for {0}: {1}'.format(response, rew_total))
+
+        return rew_total
+
+    def _ease_of_answering(self, response, prob):
         """Measure for similarity to known dull responses."""
-        pass
+        t = 0.
+        n_a = len(response)
 
-    def _information_flow(self):
+        # Get dull responses
+        for dull_resp in self.dull_responses:
+            n_s = len(set(dull_resp) & set(response))
+            if n_s > 0:
+                t += prob / n_s
+
+        t /= n_a
+        if t == 0.:
+            return 0.
+        rew = -np.log(t)
+
+        # logging.info('Ease of answering for {0}: {1}'.format(response, rew))
+
+        return rew
+
+    def _information_flow(self, last_response, response):
         """Measure for repeating responses."""
-        pass
 
-    def _semantic_coherance(self):
+        if last_response is None:
+            return 0.
+
+        # Get Encoder Output for last response
+        encoder_output_prev = self.seq2seq_model.get_encoded_representation(
+            self.session, self.encoder_output, last_response, self.data_manager)
+        prev_fw = encoder_output_prev[0][0]
+        prev_bw = encoder_output_prev[1][0]
+        prev = np.asarray([prev_fw, prev_bw]).reshape(-1)
+
+        # Get Encoder Output for current response
+        encoder_output_curr = self.seq2seq_model.get_encoded_representation(
+            self.session, self.encoder_output, response, self.data_manager)
+        curr_fw = encoder_output_curr[0][0]
+        curr_bw = encoder_output_curr[1][0]
+        curr = np.asarray([curr_fw, curr_bw]).reshape(-1)
+
+        # Get Dot Product
+        log_prod = -np.log(np.sum(np.multiply(prev, curr)))
+
+        # logging.info('Information flow for {0}: {1}'.format(response, log_prod))
+
+        return log_prod
+
+    @staticmethod
+    def _semantic_coherence(request, response, fw_prob):
         """Measure for conversation flow."""
-        pass
+        n_req = len(request)
+        n_resp = len(response)
 
-    def _save_model(self, session):
-        """ Saves model to the disk. Should be called only by fit.
+        # Compute backward probability
+        # Currently assume this to be the same as fw_prob
+        # Need to train a separate NN in backward direction
+        rew = np.log(fw_prob) / n_resp + np.log(fw_prob) / n_req
 
-        :param session:
-            Valid session object.
-        :return:
-            None.
-        """
+        # logging.info('Semantic Coherence for {0}: {1}'.format(response, rew))
 
-        # Save model for tensorflow reuse for next epoch
-        saver = tf.train.Saver()
-        save_path = self._get_model_save_path()
-        saver.save(session, save_path)
+        return rew
 
     def _get_save_dir(self):
         """ Checks for save directory and builds it if necessary.
