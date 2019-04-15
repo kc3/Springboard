@@ -665,6 +665,47 @@ class SeqToSeqModel:
                 answers_vocab_size, input_sequence_length, encoder_output, encoder_state,
                 dec_embeddings, start_of_sequence_id, end_of_sequence_id, 'decoding', reuse=tf.AUTO_REUSE)
 
+    def get_encoded_representation(self, session, encoder_output, input_question, data_manager: DataManager):
+        """Gets beam responses for given question."""
+
+        if input_question is None:
+            return None
+
+        # Add empty questions so the the input_data is the correct shape
+        questions = [input_question] * self.batch_size
+
+        # Add empty answers so the the input_data is the correct shape
+        single_input_answer = [data_manager.answers_vocab_to_int['<GO>'],
+                               data_manager.answers_vocab_to_int['<PAD>']]
+        answers = [single_input_answer] * self.batch_size
+
+        # Get Placeholders
+        graph = tf.get_default_graph()
+        input_data = graph.get_tensor_by_name('Inputs/input_data:0')
+        targets = graph.get_tensor_by_name('Inputs/targets:0')
+        lr = graph.get_tensor_by_name('Inputs/learning_rate:0')
+        input_sequence_length = graph.get_tensor_by_name('Inputs/input_sequence_length:0')
+        output_sequence_length = graph.get_tensor_by_name('Inputs/output_sequence_length:0')
+
+        for batch_i, \
+            (pad_questions_batch, pad_answers_batch, q_sequence_length_batch, a_sequence_length_batch) in enumerate(
+             self.batch_data(questions, answers, self.batch_size,
+                             data_manager.questions_vocab_to_int, data_manager.answers_vocab_to_int)):
+            # Build feed_dict
+            feed_dict = {
+                input_data: pad_questions_batch,
+                targets: pad_answers_batch,
+                lr: self.learning_rate,
+                input_sequence_length: q_sequence_length_batch,
+                output_sequence_length: a_sequence_length_batch
+            }
+
+            # Get prediction
+            output = session.run([encoder_output], feed_dict=feed_dict)
+            return output[0]
+
+        raise AssertionError('Get Encoder Representation failed.')
+
     def pad_sentence_batch(self, sentence_batch, pad_token):
         """Pad sentences with <PAD> so that each sentence of a batch has the same length"""
         max_sentence = self.max_sequence_length

@@ -63,5 +63,5 @@ def train_rl(model_name=None, epochs=1):
 
 
 if __name__ == '__main__':
-    train_seqtoseq(model_name='test-policy')
+    # train_seqtoseq(model_name='test-policy')
     train_rl(model_name='test-rl')

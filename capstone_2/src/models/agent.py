@@ -57,6 +57,10 @@ class PolicyAgent:
 
         with self.graph.as_default():
 
+            # Get Encoder Output
+            encoder_output_prev = self.seq2seq_model.get_encoded_representation(
+                self.session, self.encoder_output, last_response, self.data_manager)
+
             # Predict beam responses
             scores, predicted_ids, parent_ids = self.seq2seq_model.predict_beam_responses(
                 self.session, self.beam_output, request, self.data_manager)
@@ -83,20 +87,20 @@ class PolicyAgent:
     def finish(self):
         """Review rewards and optimize graph once conversation is over."""
 
-        logging.info('Started training agent: {0}'.format(self.agent_name))
-
-        # Change model name to save agent model state
-        old_model_name = self.seq2seq_model_name
-        self.seq2seq_model.model_name = self.seq2seq_model_name + self.agent_name
-
-        with self.graph.as_default():
-            train_loss, valid_loss = self.seq2seq_model.train(
-                self.session, self.questions, self.answers, self.train_op, self.cost, self.data_manager, save=True)
-
-        logging.info('Training Loss: {0}, Validation Loss: {1}'.format(train_loss, valid_loss))
-
-        # Change the name back, best model will overwrite the policy model for next iteration.
-        self.seq2seq_model.model_name = old_model_name
+        # logging.info('Started training agent: {0}'.format(self.agent_name))
+        #
+        # # Change model name to save agent model state
+        # old_model_name = self.seq2seq_model_name
+        # self.seq2seq_model.model_name = self.seq2seq_model_name + self.agent_name
+        #
+        # with self.graph.as_default():
+        #     train_loss, valid_loss = self.seq2seq_model.train(
+        #         self.session, self.questions, self.answers, self.train_op, self.cost, self.data_manager, save=True)
+        #
+        # logging.info('Training Loss: {0}, Validation Loss: {1}'.format(train_loss, valid_loss))
+        #
+        # # Change the name back, best model will overwrite the policy model for next iteration.
+        # self.seq2seq_model.model_name = old_model_name
 
         return -1*np.random.random()
 
