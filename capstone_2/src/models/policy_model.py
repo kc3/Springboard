@@ -184,7 +184,7 @@ class PolicyGradientModel:
         """
         abs_path = os.path.abspath(os.path.dirname(__file__))
         def_models_path = os.path.join(abs_path, '../../models/')
-        save_dir = def_models_path + self.seq2seq_model_name
+        save_dir = def_models_path + self.model_name
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
         return save_dir
@@ -196,4 +196,4 @@ class PolicyGradientModel:
             A string containing model save path.
         """
         assert self.seq2seq_model_name is not None
-        return '{0}/{1}.ckpt'.format(self._get_save_dir(), self.seq2seq_model_name)
+        return '{0}/{1}.ckpt'.format(self._get_save_dir(), self.model_name)
