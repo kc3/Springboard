@@ -46,6 +46,8 @@ class PolicyAgent:
         last_response, request = state
 
         responses = []
+        probs = []
+        rewards = []
 
         with self.graph.as_default():
 
@@ -54,25 +56,27 @@ class PolicyAgent:
                 self.session, self.beam_output, request, self.data_manager)
 
             # Prepare Probabilities (Softmax)
-            exp_scores = np.exp(np.asarray(scores)[-1:][0])
-            probs = exp_scores / sum(exp_scores)
-            # logging.info('Probabilities: {0}'.format(probs))
+            exp_scores = []
+            for j in range(len(scores)):
+                row_scores = np.exp(np.asarray(scores)[j:][0])
+                exp_scores.append(row_scores / sum(row_scores))
 
-            # Prepare responses
+            # Prepare responses and probabilities
             for i in range(self.seq2seq_model.beam_width):
                 a_tokens = []
+                p_scores = []
+                r_scores = []
                 for j in range(self.seq2seq_model.max_sequence_length):
                     token = predicted_ids[j][i]
                     a_tokens.append(token)
+                    p_scores.append(exp_scores[j][i])
+                    r_scores.append(self._reward(last_response, request, a_tokens, exp_scores[j][i]))
                     if token == self.data_manager.answers_vocab_to_int['<EOS>']:
                         break
 
                 responses.append(a_tokens)
-
-            # Prepare Rewards
-            rewards = []
-            for idx, response in enumerate(responses):
-                rewards.append(self._reward(last_response, request, response, probs[idx]))
+                probs.append(p_scores)
+                rewards.append(r_scores)
 
         return responses, probs, rewards
 
@@ -190,7 +194,10 @@ class PolicyAgent:
         curr = np.asarray([curr_fw, curr_bw]).reshape(-1)
 
         # Get Dot Product
-        log_prod = -np.log(np.sum(np.multiply(prev, curr)))
+        t = np.sum(np.multiply(prev, curr))
+        if t == 0.:
+            return 0.
+        log_prod = -np.log(t)
 
         # logging.info('Information flow for {0}: {1}'.format(response, log_prod))
 

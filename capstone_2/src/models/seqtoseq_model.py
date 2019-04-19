@@ -28,7 +28,7 @@ class SeqToSeqModel:
                  min_learning_rate=0.0001,
                  keep_probability=0.75,
                  max_sequence_length=21,
-                 beam_width =5,
+                 beam_width=5,
                  model_name=None
                  ):
 
@@ -126,20 +126,30 @@ class SeqToSeqModel:
 
         return
 
-    def train(self, session, sorted_questions, sorted_answers, train_op, cost, data_manager: DataManager, save=True):
+    def train(self, session, questions, answers, train_op, cost, data_manager: DataManager, save=True, rewards=None,
+              min_valid_loss=None):
 
         questions_vocab_to_int = data_manager.questions_vocab_to_int
         answers_vocab_to_int = data_manager.answers_vocab_to_int
 
         # Validate the training with 10% of the data
-        train_valid_split = int(len(sorted_questions) * 0.15)
+        train_valid_split = int(len(questions) * 0.15)
 
         # Split the questions and answers into training and validating data
-        train_questions = sorted_questions[train_valid_split:]
-        train_answers = sorted_answers[train_valid_split:]
+        train_questions = questions[train_valid_split:]
+        train_answers = answers[train_valid_split:]
 
-        valid_questions = sorted_questions[:train_valid_split]
-        valid_answers = sorted_answers[:train_valid_split]
+        valid_questions = questions[:train_valid_split]
+        valid_answers = answers[:train_valid_split]
+
+        if rewards is None:
+            train_rewards = None
+            valid_rewards = []
+            for v_a in valid_answers:
+                valid_rewards.append([0.]*len(v_a))
+        else:
+            train_rewards = rewards[train_valid_split:]
+            valid_rewards = rewards[:train_valid_split]
 
         # Check training loss after every 100 batches
         display_step = 100
@@ -154,9 +164,8 @@ class SeqToSeqModel:
         validation_check = ((len(train_questions)) // self.batch_size // 2) - 1
 
         # Record the training loss for each display step
-        total_train_loss = 0
+        total_train_loss = 0.
         total_summary_train_loss = 0.
-        min_valid_loss = 0.
 
         # Record the validation loss for saving improvements in the model
         summary_train_loss = []
@@ -170,24 +179,29 @@ class SeqToSeqModel:
         lr = graph.get_tensor_by_name('Inputs/learning_rate:0')
         input_sequence_length = graph.get_tensor_by_name('Inputs/input_sequence_length:0')
         output_sequence_length = graph.get_tensor_by_name('Inputs/output_sequence_length:0')
+        rewards = graph.get_tensor_by_name('Inputs/rewards:0')
 
         for epoch_i in range(1, self.epochs + 1):
-            shuffled_questions, shuffled_answers = self._shuffle_training_data(train_questions, train_answers)
+            shuffled_questions, shuffled_answers, shuffled_rewards = \
+                self._shuffle_training_data(train_questions, train_answers, train_rewards)
 
             for batch_i, \
-                (questions_batch, answers_batch, q_sequence_length_batch, a_sequence_length_batch) in enumerate(
+                (questions_batch, answers_batch, q_sequence_length_batch,
+                 a_sequence_length_batch, rewards_batch) in enumerate(
                  self.batch_data(shuffled_questions,
                                  shuffled_answers,
                                  self.batch_size,
                                  questions_vocab_to_int,
-                                 answers_vocab_to_int)):
+                                 answers_vocab_to_int,
+                                 shuffled_rewards)):
 
                 feed_dict = {
                     input_data: questions_batch,
                     targets: answers_batch,
                     lr: learning_rate,
                     input_sequence_length: q_sequence_length_batch,
-                    output_sequence_length: a_sequence_length_batch
+                    output_sequence_length: a_sequence_length_batch,
+                    rewards: rewards_batch
                 }
 
                 start_time = time.time()
@@ -199,6 +213,7 @@ class SeqToSeqModel:
                 batch_time = end_time - start_time
 
                 if batch_i % display_step == 0:
+                    logging.info('Types: total_train_loss: {0}'.format(total_train_loss))
                     print('Epoch {:>3}/{} Batch {:>4}/{} - Loss: {:>6.3f}, Seconds: {:>4.2f}'
                           .format(epoch_i,
                                   self.epochs,
@@ -220,15 +235,16 @@ class SeqToSeqModel:
                     start_time = time.time()
                     for batch_ii, \
                         (questions_batch_ii, answers_batch_ii,
-                         q_sequence_length_batch_ii, a_sequence_length_batch_ii) in \
+                         q_sequence_length_batch_ii, a_sequence_length_batch_ii, rewards_batch_ii) in \
                             enumerate(self.batch_data(valid_questions, valid_answers, self.batch_size,
-                                                      questions_vocab_to_int, answers_vocab_to_int)):
+                                                      questions_vocab_to_int, answers_vocab_to_int, valid_rewards)):
                         valid_loss = session.run(
                             cost, {input_data: questions_batch_ii,
                                    targets: answers_batch_ii,
                                    lr: learning_rate,
                                    input_sequence_length: q_sequence_length_batch_ii,
-                                   output_sequence_length: a_sequence_length_batch_ii})
+                                   output_sequence_length: a_sequence_length_batch_ii,
+                                   rewards: rewards_batch_ii})
                         total_valid_loss += valid_loss
                     end_time = time.time()
                     batch_time = end_time - start_time
@@ -245,7 +261,7 @@ class SeqToSeqModel:
                         learning_rate = self.min_learning_rate
 
                     summary_valid_loss.append(avg_valid_loss)
-                    if len(summary_valid_loss) == 1 or min_valid_loss > avg_valid_loss:
+                    if min_valid_loss is None or min_valid_loss > avg_valid_loss:
                         print('New Record!')
                         logging.info('New Record!')
                         min_valid_loss = avg_valid_loss
@@ -432,6 +448,9 @@ class SeqToSeqModel:
 
             # Output Sequence length
             output_sequence_length = tf.placeholder(tf.int32, shape=[self.batch_size], name="output_sequence_length")
+
+            # Rewards
+            _ = tf.placeholder(tf.float32, shape=[self.batch_size, self.max_sequence_length], name="rewards")
 
         return input_data, targets, lr, input_sequence_length, output_sequence_length
 
@@ -711,7 +730,7 @@ class SeqToSeqModel:
         max_sentence = self.max_sequence_length
         return [sentence + [pad_token] * (max_sentence - len(sentence)) for sentence in sentence_batch]
 
-    def batch_data(self, questions, answers, batch_size, questions_vocab_to_int, answers_vocab_to_int):
+    def batch_data(self, questions, answers, batch_size, questions_vocab_to_int, answers_vocab_to_int, rewards=None):
         """Batch questions and answers together"""
         for batch_i in range(0, len(questions) // batch_size):
             start_i = batch_i * batch_size
@@ -721,7 +740,14 @@ class SeqToSeqModel:
             a_sequence_length_batch = [len(answer) for answer in answers_batch]
             pad_questions_batch = self.pad_sentence_batch(questions_batch, questions_vocab_to_int['<PAD>'])
             pad_answers_batch = self.pad_sentence_batch(answers_batch, answers_vocab_to_int['<PAD>'])
-            yield pad_questions_batch, pad_answers_batch, q_sequence_length_batch, a_sequence_length_batch
+
+            if rewards is not None:
+                rewards_batch = rewards[start_i:start_i + batch_size]
+                pad_rewards_batch = self.pad_sentence_batch(rewards_batch, 0.)
+                yield pad_questions_batch, pad_answers_batch, q_sequence_length_batch, a_sequence_length_batch, \
+                    pad_rewards_batch
+            else:
+                yield pad_questions_batch, pad_answers_batch, q_sequence_length_batch, a_sequence_length_batch
 
     def _save_model(self, session):
         """ Saves model to the disk. Should be called only by fit.
@@ -761,7 +787,7 @@ class SeqToSeqModel:
         return '{0}/{1}.ckpt'.format(self._get_save_dir(), self.model_name)
 
     @staticmethod
-    def _shuffle_training_data(questions, answers):
+    def _shuffle_training_data(questions, answers, rewards=None):
         """Randomly shuffles questions and answers training data."""
 
         index = np.arange(len(questions))
@@ -769,8 +795,13 @@ class SeqToSeqModel:
 
         q = []
         a = []
+        r = []
         for i in index:
             q.append(questions[i])
             a.append(answers[i])
+            if rewards is not None:
+                r.append(rewards[i])
+            else:
+                r.append([0.]*len(answers[i]))
 
-        return q, a
+        return q, a, r

@@ -5,11 +5,13 @@
 import logging
 import os
 import pytest
+import numpy as np
 from datetime import datetime
 from src.models.data_manager import DataManager
 from src.models import train_model
 from src.models.predict_model import predict_seqtoseq, predict_seqtoseq_beam
 from src.models.agent import PolicyAgent
+from src.models.policy_model import PolicyGradientModel
 
 #
 # Configure logging
@@ -62,12 +64,26 @@ class TestModel(object):
         y = predict_seqtoseq_beam('Hi!', model_name='test-seqtoseq-attn')
         print(y)
 
-    @pytest.mark.run_this
     def test_policy_reward(self):
         data_manager = DataManager()
         agent = PolicyAgent(agent_name='test-agent')
         last_response = data_manager.question_to_tokens('I am fine. How are you?')
         request = data_manager.question_to_tokens('Great. How is the weather today?')
-        responses = agent.play((last_response, request))
+        responses, probs, rewards = agent.play((last_response, request))
         logging.info(responses)
+        logging.info(probs)
+        logging.info(rewards)
         assert len(responses) > 0
+
+    @pytest.mark.run_this
+    def test_rl_train(self):
+        batch_size = 1100
+        model = PolicyGradientModel(seq2seq_model_name='test-policy', model_name='rl-policy')
+        model_inputs = {
+            'request': [[np.random.randint(0, 5000) for _ in range(10)]] * batch_size,
+            'response': [[np.random.randint(0, 5000) for _ in range(15)]] * batch_size,
+            'probability': [[np.random.random() for _ in range(15)]] * batch_size,
+            'reward': [[np.random.random() for _ in range(15)]] * batch_size
+        }
+
+        model.train(model_inputs, None)
