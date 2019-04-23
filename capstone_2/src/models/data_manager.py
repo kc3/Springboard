@@ -287,10 +287,10 @@ class DataManager:
         codes = ['<PAD>', '<EOS>', '<UNK>', '<GO>']
 
         for code in codes:
-            questions_vocab_to_int[code] = len(questions_vocab_to_int) + 1
+            questions_vocab_to_int[code] = len(questions_vocab_to_int)
 
         for code in codes:
-            answers_vocab_to_int[code] = len(answers_vocab_to_int) + 1
+            answers_vocab_to_int[code] = len(answers_vocab_to_int)
 
         # Create dictionaries to map the unique integers to their respective words.
         # i.e. an inverse dictionary for vocab_to_int.
@@ -451,7 +451,8 @@ class DataManager:
             "I do not know that",
             "I am not sure",
             "I do not think that",
-            "I am sorry"
+            "I am sorry",
+            "I do not know what you mean"
         ]
 
         q_tokens = []

@@ -39,7 +39,7 @@ def train_seqtoseq(model_name=None, epochs=100):
 # Function to train RL models
 
 
-def train_rl(model_name=None, epochs=100):
+def train_rl(model_name=None):
     #
     # Configure logging
     #
@@ -56,15 +56,12 @@ def train_rl(model_name=None, epochs=100):
 
     logging.info('RL Model Training started.')
 
-    d = DataManager()
-    logging.info('Cornell Data Set loaded...')
-
     # Train individual agent
-    s_model = PolicyGradientModel(model_name=model_name, epochs=epochs)
-    s_model.fit(d)
+    s_model = PolicyGradientModel(model_name=model_name, turns=2)
+    s_model.fit()
     logging.info('Finished training RL Model...')
 
 
 if __name__ == '__main__':
-    train_seqtoseq(model_name='test-policy')
+    # train_seqtoseq(model_name='test-policy')
     train_rl(model_name='test-rl')
